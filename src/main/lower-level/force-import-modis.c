@@ -268,7 +268,7 @@ date_t date;
 
 GDALDatasetH fp, fs;
 GDALRasterBandH band;
-char **sds = NULL;
+CSLConstList sds = NULL;
 char *sdsname = NULL;
 char KeyName[NPOW_10];
 

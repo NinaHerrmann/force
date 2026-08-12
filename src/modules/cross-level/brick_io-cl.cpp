@@ -59,7 +59,7 @@ int write_brick(brick_t *brick){
   GDALDriverH driver_create   = NULL;
   GDALDataType file_datatype;
   int create;
-  char **driver_metadata = NULL;
+  CSLConstList driver_metadata = NULL;
   char **options = NULL;
   float *buf = NULL;
   float now, old;
