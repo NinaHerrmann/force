@@ -384,11 +384,19 @@ char bandname[NPOW_10];
   pylab.day      = (PyArrayObject *) PyArray_SimpleNew(1, pylab.dim_nt, NPY_INT);
 
   pylab.desc_sensor = PyArray_DescrNewFromType(NPY_STRING);
+#if NPY_API_VERSION >= NPY_2_0_API_VERSION
+  PyDataType_SET_ELSIZE(pylab.desc_sensor, NPOW_10);
+#else
   pylab.desc_sensor->elsize = NPOW_10;
+#endif
   pylab.sensor = (PyArrayObject *) PyArray_SimpleNewFromDescr(1, pylab.dim_nt, pylab.desc_sensor);
 
   pylab.desc_bandname = PyArray_DescrNewFromType(NPY_STRING);
+#if NPY_API_VERSION >= NPY_2_0_API_VERSION
+  PyDataType_SET_ELSIZE(pylab.desc_bandname, NPOW_10);
+#else
   pylab.desc_bandname->elsize = NPOW_10;
+#endif
   pylab.bandname = (PyArrayObject *) PyArray_SimpleNewFromDescr(1, pylab.dim_nb, pylab.desc_bandname);
 
   year_     = (int*)PyArray_DATA(pylab.year);
