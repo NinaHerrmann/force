@@ -31,7 +31,8 @@ This file contains functions for principal components analysis
 /** GNU Scientific Library (GSL) **/
 #include "gsl/gsl_blas.h"
 #include "gsl/gsl_eigen.h"
-
+#include "../../modules/cross-level/utils-cl.h"
+#include <time.h>
 
 /** Compute Principal Components
 +++ This function computes Principal Components. The input data may be in-

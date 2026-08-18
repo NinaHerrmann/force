@@ -33,6 +33,7 @@ This file contains functions for organizing bricks in memory, and output
 #include "gdal.h"           // public (C callable) GDAL entry points
 #include "cpl_multiproc.h"  // CPL Multi-Threading
 #include "gdalwarper.h"     // GDAL warper related entry points and defs
+#include <time.h>
 
 #ifdef __cplusplus
 #include "ogr_spatialref.h" // coordinate systems services
