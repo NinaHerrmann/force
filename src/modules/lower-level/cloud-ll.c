@@ -1738,7 +1738,7 @@ short  *temp_      = NULL;
 --- QAI:     Quality Assurance Information (modified)
 +++ Return:  SUCCESS/FAILURE
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-int detect_clouds(par_ll_t *pl2, int mission, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI){
+int detect_clouds(par_ll_t *pl2, int mission, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI, char **runtime_log, size_t *log_size){
 int npix, nclear, nland, ncloud, nc, p;
 float lowtemp = -1.0, hightemp = -1.0;
 float cc;
@@ -1841,7 +1841,7 @@ small *shd_   = NULL;
   #endif
 
   printf("cc: %6.2f%%. ", atc->cc);
-
+  fproctime_append(atc->cc, runtime_log, log_size);
   #ifdef CMIX_FAS
   exit(1);
   #endif

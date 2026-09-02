@@ -190,6 +190,46 @@ int mins;
   return;
 }
 
+void fproctime_append(double elapsed, char **runtime_log, size_t *log_size) {
+  char temp[32];
+  // Format the double into a temporary string
+  int len = snprintf(temp, sizeof(temp), "%.6f;", elapsed);
+
+  // Allocate/reallocate memory to fit the new string
+  char *new_log = realloc(*runtime_log, *log_size + len + 1);
+  if (new_log) {
+    *runtime_log = new_log;
+    strcpy(*runtime_log + *log_size, temp);
+    *log_size += len;
+  }
+}
+
+/** Write time in seconds to the time log file
++++ This function measures the processing time and prints to stdout
+--- string: string that indicates what was measured (printed to stdout)
+--- start:  start time
++++ Return: void
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
+void fproctime_write_runtimechar(char *runtime_log) {
+  if (runtime_log) {
+  FILE *fp = fopen("/home/nina-herrmann/Coding/MayTheForceBeWithData/data/locmayerhofen/mayerhofen/log/timingcc.csv", "a");
+    if (fp) {
+      fputs(runtime_log, fp);
+      fprintf(fp, "\n");
+      fclose(fp);
+    }
+    free(runtime_log); // Clean up
+  }
+}
+void fproctime_write_seconds(double start, bool newline){
+  FILE *fp = fopen("/home/nina-herrmann/Coding/MayTheForceBeWithData/data/locmayerhofen/mayerhofen/log/timingcc.csv", "a");
+  fprintf(fp, "%.6f;", start);
+  if (newline) {
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
+}
+
 
 /** Equality test for floats
 +++ This function tests for quasi equality of floats

@@ -28,10 +28,9 @@ This program is the FORCE Level-2 Processing System (single image)
 #include <stdio.h>   // core input and output functions
 #include <stdlib.h>  // standard general utilities library
 #include <string.h>  // string handling functions
-
+#include <iostream>
 #include <ctype.h>   // testing and mapping characters
 #include <unistd.h>  // standard symbolic constants and types 
-
 #include "../../modules/cross-level/const-cl.h"
 #include "../../modules/cross-level/utils-cl.h"
 #include "../../modules/cross-level/string-cl.h"
@@ -210,9 +209,12 @@ GDALDriverH driver;
   omp_set_nested(true);
   omp_set_max_active_levels(2);
 
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, &runtime_log, &log_size);
   // do processing for every datacube [not the best solution, but more easy to implenet atm]
   for (c=0; c<multicube->n; c++){
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     // skip inactive cubes
     if (!multicube->cover[c]) continue;
@@ -225,12 +227,10 @@ GDALDriverH driver;
     if ((atc = allocate_atc(pl2, meta, DN)) == NULL){
       printf("Allocating atc failed.\n"); return FAILURE;}
 
-
     /** initialize Quality Assurance Information
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (bounds_level1(meta, DN, &QAI, pl2) == FAILURE){
       printf("Compiling nodata / saturation masks failed.\n"); return FAILURE;}
-
 
     /** warp and rasterize AOI
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
@@ -238,12 +238,10 @@ GDALDriverH driver;
       AOI = rasterize_vector_from_disc(pl2->f_aoi, DN);
     }
 
-
     /** sun-target-view geometry
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (sun_target_view(pl2, meta, mission, atc, QAI) == FAILURE){
       printf("computing sun/view geometry failed.\n"); return FAILURE;}
-
 
     /** TOA reflectance + brightness temperature
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
@@ -251,23 +249,28 @@ GDALDriverH driver;
       printf("DN to TOA conversion failed.\n"); return FAILURE;}
     free_brick_bands(DN);
 
-
     /** read/reproject/ckeck DEM and compute slope/aspect
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (compile_topography(pl2, atc, &TOP, QAI) != SUCCESS){
       printf("unable to compile topography.\n"); return FAILURE;}
 
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
    /** cloud and cloud shadow detection
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-    err = detect_clouds(pl2, mission, atc, TOA, TOP->dem, TOP->exp, QAI);
+    err = detect_clouds(pl2, mission, atc, TOA, TOP->dem, TOP->exp, QAI, &runtime_log, &log_size);
     if (err == FAILURE){
       printf("error in cloud module.\n"); return FAILURE;
     } else if (err == CANCEL){
-      proctime_print("Processing time", TIME);
+      proctime_print("Error in cloud module: Processing time", TIME);
       return SUCCESS;
     }
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
    /** coregistration
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
@@ -275,25 +278,37 @@ GDALDriverH driver;
       printf("coregistration failed.\n"); return FAILURE;}
 
 
-  /** resolution merge
-  ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
+    /** resolution merge
+    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (resolution_merge(mission, pl2->resmerge, TOA, QAI) != SUCCESS){
       printf("unable to merge resolutions.\n"); return FAILURE;}
 
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
     /** radiometric correction
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if ((LEVEL2 = radiometric_correction(pl2, meta, mission, atc, multicube->cube[c], TOA, QAI, AOI, TOP, &nprod)) == NULL){
       printf("Error in radiometric module.\n"); return FAILURE;}
     free_atc(atc);
+    printf("  %d product(s) generated. ", nprod);
 
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     /** reprojection, tiling and output
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (cube_level2(pl2, meta, multicube->cube[c], LEVEL2, nprod) != SUCCESS){
       printf("Error in geometric module.\n"); return FAILURE;}
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
 
   }
+  clock_gettime(CLOCK_MONOTONIC, &start);
 
   cite_push(pl2->d_level2);
   
@@ -305,8 +320,16 @@ GDALDriverH driver;
 
   GDALDestroy();
 
-  printf("Success! "); proctime_print("Processing time", TIME);
-
+  printf("Success! ");
+  proctime_print("Processing time", TIME);
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, &runtime_log, &log_size);
+  char temp[64]; // Buffer to hold the formatted numbers
+  sprintf(temp, "%d;%d", pl2->nproc, pl2->nthread);
+  strcat(runtime_log, temp);
+  fproctime_write_runtimechar(runtime_log);
+  runtime_log = NULL;
   return SUCCESS;
 }
 
