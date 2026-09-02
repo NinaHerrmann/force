@@ -17,8 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Build image
-        run: docker build . --file Dockerfile --tag $IMAGE_NAME --build-arg build=with_tests
+        run: |
+          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
+          export SOURCE_DATE_EPOCH
+          docker build . --file Dockerfile --tag $IMAGE_NAME --build-arg build=with_tests
       - name: Run unit tests
         run: docker run --rm -t --user "$(id -u):$(id -g)" $IMAGE_NAME force-unit-testing
