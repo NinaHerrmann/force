@@ -147,7 +147,12 @@ int opt;
 
 
 int main( int argc, char *argv[] ){
-args_t args;
+	  struct timespec start, end;
+	    double elapsed;
+  char *runtime_log = NULL;
+  size_t log_size = 0;
+  clock_gettime(CLOCK_MONOTONIC, &start);
+	args_t args;
 int mission, c;
 par_ll_t *pl2  = NULL; // can be renamed to par, once par is not global anymore...
 meta_t   *meta = NULL;
@@ -325,8 +330,10 @@ GDALDriverH driver;
   clock_gettime(CLOCK_MONOTONIC, &end);
   elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
   fproctime_append(elapsed, &runtime_log, &log_size);
-  char temp[64]; // Buffer to hold the formatted numbers
-  sprintf(temp, "%d;%d", pl2->nproc, pl2->nthread);
+  
+  char temp[128]; // Increased size to be safe
+  // Add %ld for the TIME variable
+  sprintf(temp, "%ld;%d;%d", (long)TIME, pl2->nproc, pl2->nthread); 
   strcat(runtime_log, temp);
   fproctime_write_runtimechar(runtime_log);
   runtime_log = NULL;
