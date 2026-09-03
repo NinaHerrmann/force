@@ -210,9 +210,11 @@ void fproctime_append(double elapsed, char **runtime_log, size_t *log_size) {
 --- start:  start time
 +++ Return: void
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-void fproctime_write_runtimechar(char *runtime_log) {
+void fproctime_write_runtimechar(par_ll_t *pl2, char *runtime_log) {
   if (runtime_log) {
-  FILE *fp = fopen("/home/nina-herrmann/Coding/MayTheForceBeWithData/data/locmayerhofen/mayerhofen/log/timingcc.csv", "a");
+    char full_path[1024];
+    snprintf(full_path, sizeof(full_path), "%s/timingcc.csv", pl2->d_log);
+    FILE *fp = fopen(full_path, "a");
     if (fp) {
       fputs(runtime_log, fp);
       fprintf(fp, "\n");
@@ -221,14 +223,7 @@ void fproctime_write_runtimechar(char *runtime_log) {
     free(runtime_log); // Clean up
   }
 }
-void fproctime_write_seconds(double start, bool newline){
-  FILE *fp = fopen("/home/nina-herrmann/Coding/MayTheForceBeWithData/data/locmayerhofen/mayerhofen/log/timingcc.csv", "a");
-  fprintf(fp, "%.6f;", start);
-  if (newline) {
-    fprintf(fp, "\n");
-  }
-  fclose(fp);
-}
+
 
 
 /** Equality test for floats
