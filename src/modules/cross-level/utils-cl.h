@@ -39,6 +39,7 @@ Utility functions header
 #include "../cross-level/enum-cl.h"
 #include "../cross-level/string-cl.h"
 #include "../cross-level/sys-cl.h"
+#include "../lower-level/param-ll.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,9 +53,9 @@ int num_decimal_places(int i);
 double proctime(time_t start);
 void proctime_print(const char *string, time_t start);
 void fproctime_print(FILE *fp, const char *string, time_t start);
-void fproctime_write_seconds(double start, bool newline);
-void fproctime_write_runtimechar(char *runtime_log);
+void fproctime_write_runtimechar(par_ll_t *pl2, char *runtime_log);
 void fproctime_append(double elapsed, char **runtime_log, size_t *log_size);
+void fproctime_append_int(int elapsed, char **runtime_log, size_t *log_size);
 bool fequal(float a, float b);
 bool dequal(double a, double b);
 void print_humanreadable_bytes(off_t bytes);

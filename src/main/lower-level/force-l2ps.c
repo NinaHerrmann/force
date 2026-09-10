@@ -294,7 +294,7 @@ GDALDriverH driver;
     clock_gettime(CLOCK_MONOTONIC, &start);
     /** radiometric correction
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-    if ((LEVEL2 = radiometric_correction(pl2, meta, mission, atc, multicube->cube[c], TOA, QAI, AOI, TOP, &nprod)) == NULL){
+    if ((LEVEL2 = radiometric_correction(pl2, meta, mission, atc, multicube->cube[c], TOA, QAI, AOI, TOP, &nprod, &runtime_log, &log_size)) == NULL){
       printf("Error in radiometric module.\n"); return FAILURE;}
     free_atc(atc);
     printf("  %d product(s) generated. ", nprod);
@@ -317,7 +317,7 @@ GDALDriverH driver;
 
   cite_push(pl2->d_level2);
   
-  free_param_lower(pl2); free_metadata(meta); free_multicube(multicube);
+  free_metadata(meta); free_multicube(multicube);
   free_brick(DN);
 
   
@@ -331,11 +331,15 @@ GDALDriverH driver;
   elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
   fproctime_append(elapsed, &runtime_log, &log_size);
   
-  char temp[128]; // Increased size to be safe
-  // Add %ld for the TIME variable
-  sprintf(temp, "%ld;%d;%d", (long)TIME, pl2->nproc, pl2->nthread); 
-  strcat(runtime_log, temp);
-  fproctime_write_runtimechar(runtime_log);
+  time_t now;
+  double secs;
+  time(&now);
+  secs = difftime(now, TIME);
+  fproctime_append(secs, &runtime_log, &log_size);
+  fproctime_append_int(pl2->nproc, &runtime_log, &log_size);
+  fproctime_append_int(pl2->nthread, &runtime_log, &log_size);
+  fproctime_write_runtimechar(pl2, runtime_log);
+  free_param_lower(pl2); 
   runtime_log = NULL;
   return SUCCESS;
 }

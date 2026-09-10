@@ -2021,10 +2021,12 @@ brick_t **LEVEL2 = NULL;
 --- nprod:   number of products
 +++ Return:  array of product bricks
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-brick_t **radiometric_correction(par_ll_t *pl2, meta_t *meta, int mission, atc_t *atc, cube_t *cube, brick_t *TOA, brick_t *QAI, brick_t *AOI, top_t *TOP, int *nprod){
+brick_t **radiometric_correction(par_ll_t *pl2, meta_t *meta, int mission, atc_t *atc, cube_t *cube, brick_t *TOA, brick_t *QAI, brick_t *AOI, top_t *TOP, int *nprod, char **runtime_log, size_t *log_size){
 int b, nb;
 brick_t  *WVP    = NULL;
 brick_t **L2 = NULL;
+  struct timespec start, end;
+  double elapsed;
 
 
   #ifdef FORCE_CLOCK
@@ -2042,12 +2044,18 @@ brick_t **L2 = NULL;
     cite_me(_CITE_ATMVAL_);
 
 
+
     /** elevation stats (mean, max/min, # of 100m classes)
     +++ rayleigh scattering @ sea level
     +++ elevation correction factors for optical depths
     +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     for (b=0; b<nb; b++) atc->mod[b] = molecular_optical_depth(atc->wvl[b]);
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
     atc->Hr = mod_elev_factor(atc->dem.avg);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
 
     #ifdef FORCE_DEBUG
     print_fvector(atc->mod, "rayleigh @ sea level", nb, 1, 4);
@@ -2063,25 +2071,39 @@ brick_t **L2 = NULL;
 
     /** angle-dependent coarse-grid atmospheric modelling
     +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-    atmo_angledep(pl2, meta, atc, TOP, QAI);
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
+    atmo_angledep(pl2, meta, atc, TOP, QAI);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
     /** compile AOD, use image-based water/shadow targets, refine by DODB, 
     +++ use external values (one or several options are possible)
     +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (compile_aod(pl2, meta, atc, TOA, QAI, TOP) == FAILURE){
       printf("error in AOD module.\n"); return NULL;}
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
     /** elevation-dependent coarse-grid atmospheric modelling
     +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     atmo_elevdep(pl2, atc, QAI, TOP);
-    
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
     /** water vapor and gaseous transmittance estimation
     +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (mission == SENTINEL2){
       if ((WVP = water_vapor(meta, atc, TOA, QAI, TOP->dem)) == NULL){
         printf("error in water vapor estimation. "); return NULL;}
     } else WVP = NULL;
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
     /** estimate topographic correction factor
     +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (pl2->dotopo){
@@ -2089,8 +2111,12 @@ brick_t **L2 = NULL;
                       TOP->dem, TOP->exp, TOP->ill)) == NULL){
           printf("error in topographic correction. "); return NULL;}
     }
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
 
   }
+  clock_gettime(CLOCK_MONOTONIC, &start);
 
   /** Apply AOI mask
   +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
@@ -2098,12 +2124,20 @@ brick_t **L2 = NULL;
     fprintf(stderr, "Failed to apply AOI mask\n");
     return NULL;
   }
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
 
   /** Level 2 datasets
   +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
   if ((L2 = compile_level2(pl2, mission, atc, cube, TOA, QAI, WVP, TOP, nprod)) == NULL){
     printf("error in compiling Level 2 products. "); return NULL;}
+
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
 
 
   /** clean
