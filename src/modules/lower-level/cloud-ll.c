@@ -44,7 +44,7 @@ float water_probability(int nc, float cldprob, short *temp_, short *sw1_, short 
 int cloud_probability(int nthread, int npix, int nclear, int nland, int *ncloud, float cldprob, float *cc, float *lowt, float *hight, brick_t *TOA, brick_t *QAI, small *pcp_, small *clr_, small *lnd_, small *brt_, short *var_, small **CLD);
 int shadow_probability(int nthread, int nland, atc_t *atc, brick_t *TOA, brick_t *QAI, small *lnd_, small *cld_, short **SPR);
 int cloud_parallax(int nclear, int nland, int npix, int *ncloud, float *cc, brick_t *TOA, brick_t *QAI, small *pcp_, small *clr_, small *lnd_, small *brt_, short *var_, small **CLD);
-int shadow_position(float h, int x, int y, double res, int g, float **sun, float **view, int *newx, int *newy);
+int shadow_position(float h, int x, int y, float vzen_res, float szen_res, float view_sazi, float sun_sazi, float view_cazi, float sun_cazi, int *newx, int *newy);
 int shadow_matching(float shdprob, float lowtemp, float hightemp, atc_t *atc, brick_t *TOA, brick_t *QAI, brick_t *EXP, small *cld_, short *spr_, small **SHD);
 
 
@@ -1361,20 +1361,20 @@ small *cld_  = NULL;
 --- newy:   location of object in real world (returned)
 +++ Return: SUCCESS/FAILURE
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-int shadow_position(float h, int x, int y, double res, int g, float **sun, float **view, int *newx, int *newy){
+int shadow_position(float h, int x, int y, float vzen_res, float szen_res, float view_sazi, float sun_sazi, float view_cazi, float sun_cazi, int *newx, int *newy){
 float dist_across, dist_cast;
 float dx_across, dx_cast;
 float dy_across, dy_cast;
 
 
-  dist_across = h * view[tZEN][g] / res;
-  dist_cast   = h * sun[tZEN][g] / res;
+  dist_across = h * vzen_res;
+  dist_cast   = h * szen_res;
 
-  dx_across = dist_across * view[sAZI][g];
-  dx_cast   = dist_cast   * sun[sAZI][g];
+  dx_across = dist_across * view_sazi;
+  dx_cast   = dist_cast   * sun_sazi;
 
-  dy_across = dist_across * view[cAZI][g];
-  dy_cast   = dist_cast   * sun[cAZI][g];
+  dy_across = dist_across * view_cazi;
+  dy_cast   = dist_cast   * sun_cazi;
 
   *newx = (int) round(x + dx_across - dx_cast);
   *newy = (int) round(y - dy_across + dy_cast);
@@ -1542,22 +1542,51 @@ short  *temp_      = NULL;
   printf("max. object size: %d\n", size_max);
   #endif
 
+  float *vzen_res   = NULL;
+  float *szen_res   = NULL;
+  float *view_sazi  = NULL;
+  float *view_cazi  = NULL;
+  float *sun_sazi   = NULL;
+  float *sun_cazi   = NULL;
+  int   *ax = NULL, *ay = NULL;      // <-- add this
+  short *atemp = NULL;
+  small *flat_water = NULL;
+  alloc((void**)&flat_water, nc, sizeof(small));
 
+  for (p=0; p<nc; p++){
+    flat_water[p] = (slp_[p] == 0 && get_water(QAI, p));
+  }
 
+  const float spr_thresh = shdprob*10000.0f;
+  /* Note: Inversing division with multiplication is not always bit-identical.
+   * Multiplications are faster than divisions and the difference is far below any threshold that matters
+   * for this shadow-matching logic.*/
+  const float inv750 = 1.0f/750.0f;
+  float inv_res = 1.0f / (float)res;   // compute once, outside the id loop entirely
+  float inv_wlapse = 1.0f / wlapse;
 
-
-  #pragma omp parallel private(k, g, x, y, p, size, radius, core, basetemp, base_min, base_max, base, height, shadow, total, match, best_match, qtemp, P, best_P) shared(nx, ny, res, nobj, influence, lowtemp, hightemp, dlapse, rlapse, wlapse, base_step, size_max, spr_, shdprob, cld_, slp_, atc, sun_, view_, QAI, CCL, shd_, array_x, array_y, array_temp, SIZE, temp_) default(none) 
+  #pragma omp parallel private(k, g, x, y, p, size, radius, core, basetemp, base_min, base_max, base, height, shadow, total, match, best_match, qtemp, P, best_P, vzen_res, szen_res, view_sazi, view_cazi, sun_sazi, sun_cazi, ax, ay, atemp) shared(nx, ny, res, nobj, influence, lowtemp, hightemp, dlapse, rlapse, wlapse, base_step, size_max, spr_, cld_, slp_, atc, sun_, view_, QAI, CCL, shd_, array_x, array_y, array_temp, SIZE, temp_, flat_water, inv750, inv_res, inv_wlapse, spr_thresh) default(none)
   {
 
     if (temp_ != NULL) alloc((void**)&qtemp, size_max, sizeof(double));
     alloc((void**)&P,       size_max, sizeof(int));
     alloc((void**)&best_P,  size_max, sizeof(int));
+    alloc((void**)&vzen_res,  size_max, sizeof(float));
+    alloc((void**)&szen_res,  size_max, sizeof(float));
+    alloc((void**)&view_sazi, size_max, sizeof(float));
+    alloc((void**)&view_cazi, size_max, sizeof(float));
+    alloc((void**)&sun_sazi,  size_max, sizeof(float));
+    alloc((void**)&sun_cazi,  size_max, sizeof(float));
 
     #pragma omp for schedule(guided)
     for (id=0; id<nobj; id++){
 
-      // assume object is round
+      /** Copy to local variables, impact depends on memory and threads. **/
       size = SIZE[id];
+      ax    = array_x[id];
+      ay    = array_y[id];
+      atemp = array_temp[id];
+      // assume object is round
       radius = sqrt(size/M_PI);
 
       // percent of cloud core area
@@ -1576,10 +1605,10 @@ short  *temp_      = NULL;
 
         /** edge of the cloud is influenced by the warm surface
         +++ Pixels that are too warm get the value from the cloud core. **/
-        for (k=0; k<size; k++) qtemp[k] = array_temp[id][k];
+        for (k=0; k<size; k++) qtemp[k] = atemp[k];
         basetemp = quantile(qtemp, size, core);
         for (k=0; k<size; k++){
-          if (array_temp[id][k] > basetemp) array_temp[id][k] = (short)basetemp;
+          if (atemp[k] > basetemp) atemp[k] = (short)basetemp;
         }
 
         /** base heigt is estimated from the warmest cloud temperatures. **/
@@ -1593,7 +1622,17 @@ short  *temp_      = NULL;
         base_max = 12000;
       }
 
-
+      /** Execute multiplication once, and merely read values. While the improvement from having view_sazi as a 1D datastructure
+      *** is small, executing the convert_brick_ji2p call k*nobj instead of k*nobj*nheight helps a lot! **/
+      for (k=0; k<size; k++){
+        g = convert_brick_ji2p(QAI, atc->xy_sun, ay[k], ax[k]);
+        vzen_res[k]  = view_[tZEN][g] * inv_res;
+        szen_res[k]  = sun_[tZEN][g]  * inv_res;
+        view_sazi[k] = view_[sAZI][g];
+        view_cazi[k] = view_[cAZI][g];
+        sun_sazi[k]  = sun_[sAZI][g];
+        sun_cazi[k]  = sun_[cAZI][g];
+      }
       /** Base height iteration:
       +++ Lift the cloud up across the possible base height range and match
       +++ the casted shadow with the potential shadow layer. **/
@@ -1608,7 +1647,7 @@ short  *temp_      = NULL;
           +++ height. If there is no temperature band, the cloud is assumed
           +++ to be a flat plate. **/
           if (temp_ != NULL){
-            height = (basetemp-array_temp[id][k])/wlapse + base;
+            height = (basetemp-atemp[k])*inv_wlapse + base;
           } else {
             height = base;
           }
@@ -1616,8 +1655,10 @@ short  *temp_      = NULL;
           /** Position of projected shadow:
           +++ Copmpute the position of the projected shadow as a function of
           +++ view and sun geometry. **/
-          g = convert_brick_ji2p(QAI, atc->xy_sun, array_y[id][k], array_x[id][k]);
-          shadow_position(height, array_x[id][k], array_y[id][k], res, g, sun_, view_, &x, &y);
+          /** Of all optimizations this is quiet likely the most significant!
+          +++ convert_brick_ji2p depends only on k so we can execute that function
+          +++ once beforehand and write all vzen etc. reads to arrays. **/
+          shadow_position(height, ax[k], ay[k], vzen_res[k], szen_res[k], view_sazi[k], sun_sazi[k], view_cazi[k], sun_cazi[k], &x, &y);
 
           if (y < 0 || y >= ny || x < 0 || x >= nx){
             P[k] = -1; continue;}
@@ -1630,7 +1671,7 @@ short  *temp_      = NULL;
           +++ cloud. The shadow matching 'runs' into big clouds if clouds
           +++ are also permitted. The match is measured relative to the
           +++ complete shifted object, excluding the original cloud. **/
-          if (spr_[p] > (shdprob*10000) && !cld_[p] && !(slp_[p] == 0 && get_water(QAI, p))) shadow += spr_[p]/750.0;
+          if (spr_[p] > (spr_thresh) && !cld_[p] && !flat_water[p]) shadow += spr_[p]*inv750;
           if (CCL[p] != id+1) total++;
 
         }
@@ -1657,7 +1698,7 @@ short  *temp_      = NULL;
         +++ Record the position and value of the best match. **/
         if (match > best_match){
           best_match = match;
-          for (k=0; k<size; k++) best_P[k] = P[k];
+          memcpy(best_P, P, size*sizeof(int));
         }
 
       }
@@ -1682,6 +1723,12 @@ short  *temp_      = NULL;
     if (temp_ != NULL) free((void*)qtemp);
     free((void*)P);
     free((void*)best_P);
+    free((void*)vzen_res);
+    free((void*)szen_res);
+    free((void*)view_sazi);
+    free((void*)view_cazi);
+    free((void*)sun_sazi);
+    free((void*)sun_cazi);
 
   } // end omp parallel
   
