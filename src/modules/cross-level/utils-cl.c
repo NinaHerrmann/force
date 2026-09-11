@@ -229,7 +229,8 @@ void fproctime_write_runtimechar(par_ll_t *pl2, char *runtime_log) {
     FILE *fp = fopen(full_path, "a");
     if (fp) {
 	const char *tag = (strstr(full_path, "mnt") != NULL) ? "bash" : "docker";
-	fprintf(fp, "%s;%s\n", tag, runtime_log);
+  size_t len = strlen(runtime_log);
+	fprintf(fp, "%s;%.*s\n", tag, (int)(len - 1), runtime_log);
 	fclose(fp);
     }
     free(runtime_log); // Clean up

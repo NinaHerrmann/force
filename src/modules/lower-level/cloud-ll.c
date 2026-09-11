@@ -1798,6 +1798,8 @@ short *spr_   = NULL;
 small *cld_   = NULL;
 small *shd_   = NULL;
 
+  struct timespec start, end;
+  double elapsed;
 
   #ifdef FORCE_CLOCK
   time_t TIME; time(&TIME);
@@ -1809,12 +1811,16 @@ small *shd_   = NULL;
 
   nc = get_brick_ncells(QAI);
 
+  clock_gettime(CLOCK_MONOTONIC, &start);
 
   /** Potential Cloud Pixels **/
   if (potential_cloud(pl2, &npix, &nclear, &nland, 
         TOA, QAI, EXP, &pcp_, &clr_, &lnd_, &brt_, &var_) == FAILURE){
     printf("error in PCP module.\n"); return FAILURE;}
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
 
   // more than 0.1% clear pixels? -> compute probabilities
   if ((100.0*nclear/(float)npix) > 0.1){
@@ -1830,7 +1836,9 @@ small *shd_   = NULL;
         printf("error in cloud parallax module.\n"); return FAILURE;}
     }
     free((void*)pcp_); free((void*)clr_); free((void*)brt_); free((void*)var_);
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
     // less than 80% of max. allowable cloud cover? -> shadow matching
     if (cc <= pl2->maxcc*0.8){
 
@@ -1839,20 +1847,31 @@ small *shd_   = NULL;
         
         shadow_probability(pl2->nthread, nland, atc, TOA, QAI, lnd_, cld_, &spr_);
         free((void*)lnd_);
-        
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+        fproctime_append(elapsed, runtime_log, log_size);
+        clock_gettime(CLOCK_MONOTONIC, &start);
         shadow_matching(pl2->shdprob, lowtemp, hightemp, atc, TOA, QAI, EXP, cld_, spr_, &shd_);
         free((void*)spr_);
-
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+        fproctime_append(elapsed, runtime_log, log_size);
+        clock_gettime(CLOCK_MONOTONIC, &start);
       } else {
         
         free((void*)lnd_); free((void*)spr_);
         alloc((void**)&shd_, nc, sizeof(small));
-        
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+        fproctime_append(elapsed, runtime_log, log_size);
+        clock_gettime(CLOCK_MONOTONIC, &start);
       }
 
       // create the cloud/shadow mask and calculate distance
       atc->cc = finalize_cloud(pl2, npix, atc, TOA, QAI, DEM, cld_, shd_);
-
+      clock_gettime(CLOCK_MONOTONIC, &end);
+      elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+      fproctime_append(elapsed, runtime_log, log_size);
     // more than 80% of max. allowable cloud cover? -> everything is cloud or shadow
     } else {
 
@@ -1862,6 +1881,9 @@ small *shd_   = NULL;
       for (p=0; p<nc; p++) shd_[p] = true;
 
       atc->cc = finalize_cloud(pl2, npix, atc, TOA, QAI, DEM, cld_, shd_);
+      clock_gettime(CLOCK_MONOTONIC, &end);
+      elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+      fproctime_append(elapsed, runtime_log, log_size);
       atc->cc = 100;
 
     }
@@ -1873,12 +1895,19 @@ small *shd_   = NULL;
     alloc((void**)&cld_, nc, sizeof(small));
     alloc((void**)&shd_, nc, sizeof(small));
 
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
     for (p=0; p<nc; p++){ cld_[p] = pcp_[p]; shd_[p] = true;}
     free((void*)pcp_); free((void*)clr_); free((void*)brt_); free((void*)var_);
 
     atc->cc = finalize_cloud(pl2, npix, atc, TOA, QAI, DEM, cld_, shd_);
     atc->cc = 100;
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
   }
   
   free((void*)cld_); free((void*)shd_);
