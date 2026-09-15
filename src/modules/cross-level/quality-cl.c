@@ -28,79 +28,11 @@ This file contains functions for quality assurance
 #include "quality-cl.h"
 
 
-/** This function sets any quality bit in the QAI layer
-+++ Attention: this function implements no safety measures! 
-+++ The brick short memory, bitfield, pixel, and index are all vulnerable
-+++ to misuse. Take care.
---- qai:    Quality Assurance Information
---- index:  QAI layer
---- p:      pixel
---- val:    set to this value (typically 0 or 1, but can be another 
-            integer, too, in which case, a wider bit field is changed
---- bitfields: how many bitfields to set? (typically 1 for binary bit, 
-               but can be larger to set multi-bit flags)
-+++ Return: void
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-void set_qai(brick_t *qai, int index, int p, short val, int bitfields){
 
-  // Clear the existing bits for the specified bitfields
-  short mask = (1 << bitfields) - 1;
-  qai->vshort[0][p] &= ~(mask << index);
 
-  // Set the new value
-  qai->vshort[0][p] |= (short)(val << index);
-}
 
-/** This function sets any quality bit in the QAI layer
-+++ The same as set_qai, but writes the value to a short value directly
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-void set_qai_to_value(short *value, int index, short val, int bitfields){
 
-  // Clear the existing bits for the specified bitfields
-  short mask = (1 << bitfields) - 1;
-  *value &= ~(mask << index);
 
-  // Set the new value
-  *value |= (short)(val << index);
-}
-
-/** This function reads any quality bit in the QAI layer
-+++ Attention: this function implements no safety measures! 
-+++ The brick short memory, bitfield, pixel, and index are all vulnerable
-+++ to misuse. Take care.
---- qai:       Quality Assurance Information
---- index:     QAI layer
---- p:         pixel
---- bitfields: how many bitfields to read? (typically 1 for binary bit, 
-               but can be larger to retrieve multi-bit flags
-+++ Return:    void
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-short get_qai(brick_t *qai, int index, int p, int bitfields){
-int i;
-short val = 0;
-
-  for (i=0; i<bitfields; i++) val |= (short)(1 << i);
-
-  return (short)(qai->vshort[0][p] >> index) & val;
-}
-
-/** This function reads any quality bit in the QAI layer
-+++ The same as get_qai, but reads the value from a short value directly
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-short get_qai_from_value(short value, int index, int bitfields){
-int i;
-short val = 0;
-
-  for (i=0; i<bitfields; i++) val |= (short)(1 << i);
-
-  return (short)(value >> index) & val;
-}
-
-/** read off/on flag **/
-bool get_off(brick_t *qai, int p){
-
-  return get_qai(qai, _QAI_BIT_OFF_, p, 1);
-}
 
 /** read off/on flag, directly from value **/
 bool get_off_from_value(short value){
@@ -108,11 +40,7 @@ bool get_off_from_value(short value){
   return get_qai_from_value(value, _QAI_BIT_OFF_, 1);
 }
 
-/** read cloud flag **/
-char get_cloud(brick_t *qai, int p){
 
-  return get_qai(qai, _QAI_BIT_CLD_, p, 2);
-}
 
 /** read cloud flag, directly from value **/
 char get_cloud_from_value(short value){
@@ -120,11 +48,7 @@ char get_cloud_from_value(short value){
   return get_qai_from_value(value, _QAI_BIT_CLD_, 2);
 }
 
-/** read cloud shadow flag **/
-bool get_shadow(brick_t *qai, int p){
 
-  return get_qai(qai, _QAI_BIT_SHD_, p, 1);
-}
 
 /** read cloud shadow flag, directly from value **/
 bool get_shadow_from_value(short value){
@@ -132,11 +56,7 @@ bool get_shadow_from_value(short value){
   return get_qai_from_value(value, _QAI_BIT_SHD_, 1);
 }
 
-/** read snow flag **/
-bool get_snow(brick_t *qai, int p){
 
-  return get_qai(qai, _QAI_BIT_SNW_, p, 1);
-}
 
 /** read snow flag, directly from value **/
 bool get_snow_from_value(short value){
@@ -144,11 +64,7 @@ bool get_snow_from_value(short value){
   return get_qai_from_value(value, _QAI_BIT_SNW_, 1);
 }
 
-/** read water flag **/
-bool get_water(brick_t *qai, int p){
 
-  return get_qai(qai, _QAI_BIT_WTR_, p, 1);
-}
 
 /** read water flag, directly from value **/
 bool get_water_from_value(short value){
@@ -204,11 +120,7 @@ bool get_lowsun_from_value(short value){
   return get_qai_from_value(value, _QAI_BIT_SUN_, 1);
 }
 
-/** read illumination flag **/
-char get_illumination(brick_t *qai, int p){
 
-  return get_qai(qai, _QAI_BIT_ILL_, p, 2);
-}
 
 /** read illumination flag, directly from value **/
 char get_illumination_from_value(short value){
@@ -249,21 +161,6 @@ void set_off(brick_t *qai, int p, short val){
 /** set off/on flag, directly to value **/
 void set_off_to_value(short *value, short val){
   set_qai_to_value(value, _QAI_BIT_OFF_, val, 1);
-}
-
-/** set cloud flag **/
-void set_cloud(brick_t *qai, int p, short val){
-  set_qai(qai, _QAI_BIT_CLD_, p, val, 2);
-}
-
-/** set cloud flag, directly to value **/
-void set_cloud_to_value(short *value, short val){
-  set_qai_to_value(value, _QAI_BIT_CLD_, val, 2);
-}
-
-/** set cloud shadow flag **/
-void set_shadow(brick_t *qai, int p, short val){
-  set_qai(qai, _QAI_BIT_SHD_, p, val, 1);
 }
 
 /** set cloud shadow flag, directly to value **/

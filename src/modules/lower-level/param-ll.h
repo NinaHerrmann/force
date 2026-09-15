@@ -92,7 +92,7 @@ typedef struct {
   /** resolution parameters **/
   int psf;       // flag: point spread function
   int vimp;      // flag: use ImproPhe'd data
-  int  resmerge; // resolution merge
+  int resmerge; // resolution merge
   
   /** L1 post-processing parameters **/
   int impulse;   // scan for impulse noise?

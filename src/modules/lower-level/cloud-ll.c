@@ -87,37 +87,21 @@ int cld_buf, cir_buf, shd_buf;
 
   alloc((void**)&fcir_,    nc, sizeof(small));
 
-  /** set confident cloud **/
-  #pragma omp parallel shared(nc, QAI, fcld_) default(none)
+  /** set confident cloud  and cirrus **/
+  // Merge the loops to avoid iterating two times over nc
+  int do_cirrus = (cirrus_ != NULL);
+  #pragma omp parallel shared(nc, QAI, fcld_, dem_, cirrus_, fcir_, atc, do_cirrus) private(z, cir_thr) default(none)
   {
-
     #pragma omp for
-    for (p=0; p<nc; p++){
-      if (get_off(QAI, p)) continue;
-      if (fcld_[p]) set_cloud(QAI, p, 2);
-    }
-  }
-
-  /** set cirrus **/
-  if (cirrus_ != NULL){
-
-    #pragma omp parallel shared(nc, QAI, dem_, cirrus_, fcir_, atc) private(z, cir_thr) default(none)
-    {
-
-      #pragma omp for
       for (p=0; p<nc; p++){
-
         if (get_off(QAI, p)) continue;
-
-        if (!get_snow(QAI, p) && cirrus_[p] > 100){
+        if (fcld_[p]) set_cloud(QAI, p, 2);
+        if (do_cirrus && !get_snow(QAI, p) && cirrus_[p] > 100){
           z = atc->dem.min+atc->dem.step/2.0 + dem_[p]*atc->dem.step;
-          if ((cir_thr = 70 + 70*z*z) < 100) cir_thr = 100; // Baetens et al. 2019
+          if ((cir_thr = 70 + 70*z*z) < 100) cir_thr = 100;
           if (cirrus_[p] > cir_thr) fcir_[p] = true;
         }
-
       }
-    }
-
   }
 
   /** buffer clouds **/
@@ -144,14 +128,19 @@ int cld_buf, cir_buf, shd_buf;
 
     #pragma omp for
     for (p=0; p<nc; p++){
-      if (get_off(QAI, p)) continue;
+      // avoid repeated get_cloud calls.
+      int cv;
       if (fcld_[p]){
-        if (get_cloud(QAI, p) == 0) set_cloud(QAI, p, 1); 
+        cv = get_cloud(QAI, p);
+        if (cv == 0){ set_cloud(QAI, p, 1); cv = 1; }
       } else if (fcir_[p]){
         set_cloud(QAI, p, 3);
+        cv = 3;
+      } else {
+        cv = get_cloud(QAI, p);
       }
       if (fshd_[p]) set_shadow(QAI, p, true);
-      if (get_cloud(QAI, p) > 0 || get_shadow(QAI, p)) k++;
+      if (cv > 0 || get_shadow(QAI, p)) k++;
     }
 
   }
