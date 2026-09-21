@@ -57,7 +57,7 @@ RSTATS_LIBS = $(shell R CMD config --ldflags | sed 's/ /\n/g' | grep '\-L') -lR
 ### Compiler
 
 # Compilation Flags
-CFLAGS=-O3 -Wall -fopenmp
+CFLAGS=-O3 -Wall -fopenmp -D_GTHREAD_USE_COND_INIT_FUNC
 #CFLAGS=-g -Wall -fopenmp
 
 GCC=gcc $(CFLAGS)
@@ -76,8 +76,8 @@ RSTATSDIR = rstats
 PYTHONDIR = python
 MISCDIR = misc
 
-
 # Targets
+minimal: check-tools prepare force-l2ps bash
 all: check-tools prepare exe bash rstats python misc
 with_tests: all tests
 .PHONY: prepare check-tools bash rstats python misc \

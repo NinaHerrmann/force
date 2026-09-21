@@ -141,7 +141,7 @@ int opt;
     fprintf(stderr, "non-optional arguments are missing.\n");
     usage(argv[0], FAILURE);
   }
-
+  
   return;
 }
 

@@ -22,7 +22,6 @@ requirements:
   - lockfile-remove
   - ogr2ogr
   - ogrinfo
-  - opencv_version
   - parallel
   - python3
   - R

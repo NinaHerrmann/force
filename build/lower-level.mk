@@ -24,7 +24,7 @@ lower: \
     topo-ll
 
 aod-ll: prepare $(LOWER_DIR)/aod-ll.c
-	$(GCC) $(GDAL_INCLUDES) $(GDAL_FLAGS) -c $(LOWER_DIR)/aod-ll.c -o $(OBJDIR)/aod-ll.o $(GDAL_LIBS)
+	$(GCC) $(GDAL_INCLUDES) $(GDAL_FLAGS) $(GSL_INCLUDES) $(GSL_FLAGS) -c $(LOWER_DIR)/aod-ll.c -o $(OBJDIR)/aod-ll.o $(GDAL_LIBS)
 
 atc-ll: prepare $(LOWER_DIR)/atc-ll.c
 	$(GCC) -c $(LOWER_DIR)/atc-ll.c -o $(OBJDIR)/atc-ll.o
@@ -51,7 +51,7 @@ equi7-ll: prepare $(LOWER_DIR)/equi7-ll.c
 	$(GCC) -c $(LOWER_DIR)/equi7-ll.c -o $(OBJDIR)/equi7-ll.o
 
 gas-ll: prepare $(LOWER_DIR)/gas-ll.c
-	$(GCC) -c $(LOWER_DIR)/gas-ll.c -o $(OBJDIR)/gas-ll.o
+	$(GCC) $(GSL_INCLUDES) $(GSL_FLAGS) -c $(LOWER_DIR)/gas-ll.c -o $(OBJDIR)/gas-ll.o
 
 glance7-ll: prepare $(LOWER_DIR)/glance7-ll.c
 	$(GCC) -c $(LOWER_DIR)/glance7-ll.c -o $(OBJDIR)/glance7-ll.o
@@ -69,7 +69,7 @@ read-ll: prepare $(LOWER_DIR)/read-ll.c
 	$(GCC) $(GDAL_INCLUDES) $(GDAL_FLAGS) -c $(LOWER_DIR)/read-ll.c -o $(OBJDIR)/read-ll.o $(GDAL_LIBS)
 
 resmerge-ll: prepare $(LOWER_DIR)/resmerge-ll.c
-	$(GCC) -c $(LOWER_DIR)/resmerge-ll.c -o $(OBJDIR)/resmerge-ll.o
+	$(GCC) $(GSL_INCLUDES) $(GSL_FLAGS) -c $(LOWER_DIR)/resmerge-ll.c -o $(OBJDIR)/resmerge-ll.o
 
 sunview-ll: prepare $(LOWER_DIR)/sunview-ll.c
 	$(GCC) -c $(LOWER_DIR)/sunview-ll.c -o $(OBJDIR)/sunview-ll.o

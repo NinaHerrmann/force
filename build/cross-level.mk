@@ -78,7 +78,7 @@ param-cl: prepare $(CROSS_DIR)/param-cl.c
 	$(GCC) -c $(CROSS_DIR)/param-cl.c -o $(OBJDIR)/param-cl.o
 
 pca-cl: prepare $(CROSS_DIR)/pca-cl.c
-	$(GCC) $(GSL) -c $(CROSS_DIR)/pca-cl.c -o $(OBJDIR)/pca-cl.o $(LDGSL)
+	$(GCC) $(GSL) $(GSL_INCLUDES) -c $(CROSS_DIR)/pca-cl.c -o $(OBJDIR)/pca-cl.o $(LDGSL)
 
 quality-cl: prepare $(CROSS_DIR)/quality-cl.c
 	$(GCC) -c $(CROSS_DIR)/quality-cl.c -o $(OBJDIR)/quality-cl.o
@@ -90,7 +90,7 @@ read-cl: prepare $(CROSS_DIR)/read-cl.c
 	$(GCC) -c $(CROSS_DIR)/read-cl.c -o $(OBJDIR)/read-cl.o
 
 stats-cl: prepare $(CROSS_DIR)/stats-cl.c
-	$(GCC) -c $(CROSS_DIR)/stats-cl.c -o $(OBJDIR)/stats-cl.o
+	$(GCC) $(GSL_INCLUDES) -c $(CROSS_DIR)/stats-cl.c -o $(OBJDIR)/stats-cl.o
 
 string-cl: prepare $(CROSS_DIR)/string-cl.c
 	$(GCC) -c $(CROSS_DIR)/string-cl.c -o $(OBJDIR)/string-cl.o
