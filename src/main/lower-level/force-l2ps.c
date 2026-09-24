@@ -340,7 +340,7 @@ GDALDriverH driver;
   CPLPopErrorHandler();
 
   GDALDestroy();
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
   printf("Success! "); proctime_print("Processing time", TIME);
   elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
   fproctime_append(elapsed, &runtime_log, &log_size);

@@ -1815,12 +1815,12 @@ small *shd_   = NULL;
   clock_gettime(CLOCK_MONOTONIC, &end);
   elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
   fproctime_append(elapsed, runtime_log, log_size);
-  clock_gettime(CLOCK_MONOTONIC, &start);
 
   // more than 0.1% clear pixels? -> compute probabilities
   if ((100.0*nclear/(float)npix) > 0.1){
 
     /** Cloud Probability **/
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     if (mission == LANDSAT){
       if (cloud_probability(pl2->nthread, npix, nclear, nland, &ncloud, pl2->cldprob, &cc, &lowtemp, &hightemp,
@@ -1839,7 +1839,7 @@ small *shd_   = NULL;
 
       // if there is no cloud, there is no shadow
       if (ncloud > 0){
-        
+        clock_gettime(CLOCK_MONOTONIC, &start);
         shadow_probability(pl2->nthread, nland, atc, TOA, QAI, lnd_, cld_, &spr_);
         free((void*)lnd_);
         clock_gettime(CLOCK_MONOTONIC, &end);
@@ -1851,17 +1851,19 @@ small *shd_   = NULL;
         clock_gettime(CLOCK_MONOTONIC, &end);
         elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
         fproctime_append(elapsed, runtime_log, log_size);
-        clock_gettime(CLOCK_MONOTONIC, &start);
       } else {
-        
+        clock_gettime(CLOCK_MONOTONIC, &start);
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+        fproctime_append(elapsed, runtime_log, log_size);
+        clock_gettime(CLOCK_MONOTONIC, &start);
         free((void*)lnd_); free((void*)spr_);
         alloc((void**)&shd_, nc, sizeof(small));
         clock_gettime(CLOCK_MONOTONIC, &end);
         elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
         fproctime_append(elapsed, runtime_log, log_size);
-        clock_gettime(CLOCK_MONOTONIC, &start);
       }
-
+      clock_gettime(CLOCK_MONOTONIC, &start);
       // create the cloud/shadow mask and calculate distance
       atc->cc = finalize_cloud(pl2, npix, atc, TOA, QAI, DEM, cld_, shd_);
       clock_gettime(CLOCK_MONOTONIC, &end);
@@ -1869,31 +1871,33 @@ small *shd_   = NULL;
       fproctime_append(elapsed, runtime_log, log_size);
     // more than 80% of max. allowable cloud cover? -> everything is cloud or shadow
     } else {
+      // not very beautiful but append zero as processing time
+      fproctime_append(0, runtime_log, log_size);
+      fproctime_append(0, runtime_log, log_size);
 
+      clock_gettime(CLOCK_MONOTONIC, &start);
       alloc((void**)&shd_, nc, sizeof(small));
       free((void*)lnd_);
-
       for (p=0; p<nc; p++) shd_[p] = true;
-
       atc->cc = finalize_cloud(pl2, npix, atc, TOA, QAI, DEM, cld_, shd_);
       clock_gettime(CLOCK_MONOTONIC, &end);
       elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
       fproctime_append(elapsed, runtime_log, log_size);
       atc->cc = 100;
-
     }
 
 
    // less than 0.1% clear pixels? -> everything is cloud or shadow
   } else {
+    fproctime_append(0, runtime_log, log_size);
+    fproctime_append(0, runtime_log, log_size);
+    fproctime_append(0, runtime_log, log_size);
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     alloc((void**)&cld_, nc, sizeof(small));
     alloc((void**)&shd_, nc, sizeof(small));
 
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
-    fproctime_append(elapsed, runtime_log, log_size);
-    clock_gettime(CLOCK_MONOTONIC, &start);
 
     for (p=0; p<nc; p++){ cld_[p] = pcp_[p]; shd_[p] = true;}
     free((void*)pcp_); free((void*)clr_); free((void*)brt_); free((void*)var_);
