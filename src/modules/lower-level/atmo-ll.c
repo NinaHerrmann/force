@@ -2117,8 +2117,16 @@ brick_t **L2 = NULL;
     elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
     fproctime_append(elapsed, runtime_log, log_size);
 
-    clock_gettime(CLOCK_MONOTONIC, &start);
+  } else
+  {
+    fproctime_append(0, runtime_log, log_size);
+    fproctime_append(0, runtime_log, log_size);
+    fproctime_append(0, runtime_log, log_size);
+    fproctime_append(0, runtime_log, log_size);
+    fproctime_append(0, runtime_log, log_size);
+
   }
+  clock_gettime(CLOCK_MONOTONIC, &start);
 
   /** Apply AOI mask
   +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
