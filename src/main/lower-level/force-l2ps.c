@@ -312,7 +312,7 @@ GDALDriverH driver;
     clock_gettime(CLOCK_MONOTONIC, &start);
     /** radiometric correction
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-    if ((LEVEL2 = radiometric_correction(pl2, meta, mission, atc, multicube->cube[c], TOA, QAI, AOI, TOP, &nprod)) == NULL){
+    if ((LEVEL2 = radiometric_correction(pl2, meta, mission, atc, multicube->cube[c], TOA, QAI, AOI, TOP, &nprod, &runtime_log, &log_size)) == NULL){
       printf("Error in radiometric module.\n"); return FAILURE;}
     free_atc(atc);
 
