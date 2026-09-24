@@ -148,6 +148,11 @@ int opt;
 
 
 int main( int argc, char *argv[] ){
+struct timespec start, end;
+double elapsed;
+char *runtime_log = NULL;
+size_t log_size = 0;
+clock_gettime(CLOCK_MONOTONIC, &start);
 args_t args;
 int mission, c;
 par_ll_t *pl2  = NULL; // can be renamed to par, once par is not global anymore...
@@ -210,9 +215,12 @@ GDALDriverH driver;
   omp_set_nested(true);
   omp_set_max_active_levels(2);
 
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, &runtime_log, &log_size);
   // do processing for every datacube [not the best solution, but more easy to implenet atm]
   for (c=0; c<multicube->n; c++){
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     // skip inactive cubes
     if (!multicube->cover[c]) continue;
@@ -238,29 +246,41 @@ GDALDriverH driver;
       AOI = rasterize_vector_from_disc(pl2->f_aoi, DN);
     }
 
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
     /** sun-target-view geometry
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (sun_target_view(pl2, meta, mission, atc, QAI) == FAILURE){
       printf("computing sun/view geometry failed.\n"); return FAILURE;}
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     /** TOA reflectance + brightness temperature
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (convert_level1(meta, mission, atc, DN, &TOA, QAI) != SUCCESS){
       printf("DN to TOA conversion failed.\n"); return FAILURE;}
     free_brick_bands(DN);
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     /** read/reproject/ckeck DEM and compute slope/aspect
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (compile_topography(pl2, atc, &TOP, QAI) != SUCCESS){
       printf("unable to compile topography.\n"); return FAILURE;}
 
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
    /** cloud and cloud shadow detection
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-    err = detect_clouds(pl2, mission, atc, TOA, TOP->dem, TOP->exp, QAI);
+    err = detect_clouds(pl2, mission, atc, TOA, TOP->dem, TOP->exp, QAI, &runtime_log, &log_size);
     if (err == FAILURE){
       printf("error in cloud module.\n"); return FAILURE;
     } else if (err == CANCEL){
@@ -268,36 +288,52 @@ GDALDriverH driver;
       return SUCCESS;
     }
 
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
    /** coregistration
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (coregister(mission, pl2, TOA, QAI) != SUCCESS){
       printf("coregistration failed.\n"); return FAILURE;}
 
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
   /** resolution merge
   ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (resolution_merge(mission, pl2->resmerge, TOA, QAI) != SUCCESS){
       printf("unable to merge resolutions.\n"); return FAILURE;}
 
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
     /** radiometric correction
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if ((LEVEL2 = radiometric_correction(pl2, meta, mission, atc, multicube->cube[c], TOA, QAI, AOI, TOP, &nprod)) == NULL){
       printf("Error in radiometric module.\n"); return FAILURE;}
     free_atc(atc);
 
-
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
     /** reprojection, tiling and output
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
     if (cube_level2(pl2, meta, multicube->cube[c], LEVEL2, nprod) != SUCCESS){
       printf("Error in geometric module.\n"); return FAILURE;}
 
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, &runtime_log, &log_size);
+    
   }
-
+  clock_gettime(CLOCK_MONOTONIC, &start);
   cite_push(pl2->d_level2);
   
-  free_param_lower(pl2); free_metadata(meta); free_multicube(multicube);
+  free_metadata(meta); free_multicube(multicube);
   free_brick(DN);
 
   
@@ -306,7 +342,19 @@ GDALDriverH driver;
   GDALDestroy();
 
   printf("Success! "); proctime_print("Processing time", TIME);
-
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, &runtime_log, &log_size);
+  
+  time_t now;
+  double secs;
+  time(&now);
+  secs = difftime(now, TIME);
+  fproctime_append(secs, &runtime_log, &log_size);
+  fproctime_append_int(pl2->nproc, &runtime_log, &log_size);
+  fproctime_append_int(pl2->nthread, &runtime_log, &log_size);
+  fproctime_write_runtimechar(pl2, runtime_log);
+  free_param_lower(pl2); 
+  runtime_log = NULL;
   return SUCCESS;
 }
 
