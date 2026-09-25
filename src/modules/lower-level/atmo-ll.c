@@ -54,7 +54,7 @@ brick_t *compile_l2_vzn(par_ll_t *pl2, atc_t *atc, cube_t *cube, brick_t *QAI);
 brick_t *compile_l2_hot(par_ll_t *pl2, cube_t *cube, brick_t *TOA, brick_t *QAI);
 brick_t *compile_l2_aod(par_ll_t *pl2, atc_t *atc, cube_t *cube, brick_t *QAI, top_t *TOP);
 brick_t *compile_l2_wvp(par_ll_t *pl2, atc_t *atc, cube_t *cube, brick_t *QAI, brick_t *WVP);
-brick_t **compile_level2(par_ll_t *pl2, int mission, atc_t *atc, cube_t *cube, brick_t *TOA, brick_t *QAI, brick_t *WVP, top_t *TOP, int *nproduct);
+brick_t **compile_level2(par_ll_t *pl2, int mission, atc_t *atc, cube_t *cube, brick_t *TOA, brick_t *QAI, brick_t *WVP, top_t *TOP, int *nproduct, char **runtime_log, size_t *log_size);
 
 
 /** This function computes the weights to interpolate the coarse atmos-
@@ -1924,11 +1924,12 @@ short *wvp_ = NULL;
 --- nproduct: number of products
 +++ Return: array of product bricks
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-brick_t **compile_level2(par_ll_t *pl2, int mission, atc_t *atc, cube_t *cube, brick_t *TOA, brick_t *QAI, brick_t *WVP, top_t *TOP, int *nproduct){
+brick_t **compile_level2(par_ll_t *pl2, int mission, atc_t *atc, cube_t *cube, brick_t *TOA, brick_t *QAI, brick_t *WVP, top_t *TOP, int *nproduct, char **runtime_log, size_t *log_size){
 int nprod, p_boa, p_qai, p_dst, p_vzn, p_hot, p_aod, p_wvp, p_ovv;
 brick_t **LEVEL2 = NULL;
 
-
+  struct timespec start, end;
+  double elapsed;
   #ifdef FORCE_CLOCK 
   time_t TIME; time(&TIME);
   #endif
@@ -1955,40 +1956,65 @@ brick_t **LEVEL2 = NULL;
 
 
 
+  clock_gettime(CLOCK_MONOTONIC, &start);
 
   if (p_hot >= 0){
     if ((LEVEL2[p_hot] = compile_l2_hot(pl2, cube, TOA, QAI)) == NULL){
       printf("error in compiling L2 HOT. "); return NULL;}}
-      
+
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
   if (p_aod >= 0){
     if ((LEVEL2[p_aod] = compile_l2_aod(pl2, atc, cube, QAI, TOP)) == NULL){
       printf("error in compiling L2 AOD. "); return NULL;}}
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
   // do BOA near the end (TOA is altered within)
   if ((LEVEL2[p_boa] = compile_l2_boa(pl2, mission, atc, cube, TOA, QAI, WVP, TOP)) == NULL){
     printf("error in compiling L2 BOA. "); return NULL;}
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
   // do WVP after BOA (WVP is altered within)
   if (p_wvp >= 0){
     if ((LEVEL2[p_wvp] = compile_l2_wvp(pl2, atc, cube, QAI, WVP)) == NULL){
       printf("error in compiling L2 WVP. "); return NULL;}} else free_brick(WVP);
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
   // do QAI at the very end (QAI is altered within)
   if ((LEVEL2[p_qai] = compile_l2_qai(pl2, cube, QAI)) == NULL){
     printf("error in compiling L2 QAI. "); return NULL;}
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
   if (p_dst >= 0){
     if ((LEVEL2[p_dst] = compile_l2_dst(pl2, cube, LEVEL2[p_qai])) == NULL){
       printf("error in compiling L2 DST. "); return NULL;}}
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
   if (p_vzn >= 0){
     if ((LEVEL2[p_vzn] = compile_l2_vzn(pl2, atc, cube, LEVEL2[p_qai])) == NULL){
     printf("error in compiling L2 VZN. "); return NULL;}}
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
   if (p_ovv >= 0){
     if ((LEVEL2[p_ovv] = compile_l2_ovv(pl2, LEVEL2[p_boa], LEVEL2[p_qai])) == NULL){
     printf("error in compiling L2 OVV. "); return NULL;}}
-
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
     // free some memory
   free_topography(TOP);
 
@@ -2143,9 +2169,8 @@ brick_t **L2 = NULL;
   clock_gettime(CLOCK_MONOTONIC, &start);
   /** Level 2 datasets
   +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-  if ((L2 = compile_level2(pl2, mission, atc, cube, TOA, QAI, WVP, TOP, nprod)) == NULL){
+  if ((L2 = compile_level2(pl2, mission, atc, cube, TOA, QAI, WVP, TOP, nprod, runtime_log, log_size)) == NULL){
     printf("error in compiling Level 2 products. "); return NULL;}
-
   clock_gettime(CLOCK_MONOTONIC, &end);
   printf("Success! ");
   elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
