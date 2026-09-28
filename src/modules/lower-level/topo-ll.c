@@ -817,7 +817,8 @@ int *off_flat = NULL;
 
   #ifdef FORCE_DEBUG
   printf("sampling for estimating C:\n");
-  for (k=0; k<nk; k++) printf("%d ", K[k]); printf("\n");
+  for (k=0; k<nk; k++) printf("%d ", K[k]); 
+  printf("\n");
   #endif
 
 
