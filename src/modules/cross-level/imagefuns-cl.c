@@ -897,7 +897,7 @@ queue_t fifo;
           printf("Failed to enqueue another coord. pair!\n"); 
           return FAILURE;
         }
-        continue;
+        break;
 
       }
     }

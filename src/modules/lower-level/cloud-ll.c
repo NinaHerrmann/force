@@ -764,14 +764,16 @@ int shadow_probability(int nthread, int nland, atc_t *atc, brick_t *TOA, brick_t
 int i, j, p, nx, ny, nc, b, nb = 2;
 int nthr;
 int err = 0;
+int nvalid = 0;
 double res;
 float maxdist;
 short bck;
 float lo = 0.175;
 short *spr_  = NULL;
 short *toa_    = NULL;
-short *mask_   = NULL;
-short *marker_ = NULL;
+short *mask_b[2]  = { NULL, NULL };
+short *mark_b[2]  = { NULL, NULL };
+unsigned char *inv = NULL;
 ushort *dist_;
 char domains[2][NPOW_10] = { "NIR", "SWIR1" };
 
@@ -799,68 +801,100 @@ char domains[2][NPOW_10] = { "NIR", "SWIR1" };
   printf("maximum distance for cloud shadows: %.0f", maxdist);
   #endif
 
+  alloc((void**)&inv, nc, sizeof(unsigned char));
 
-  #pragma omp parallel shared(nc, spr_) reduction(+: err) default(none)
-  {
-    #pragma omp for
-    for (p=0; p<nc; p++) spr_[p] = SHRT_MAX;
+#pragma omp parallel for num_threads(nthread) private(j, p) shared(inv, dist_, QAI, nx, ny, maxdist) reduction(+: nvalid) default(none)
+  for (i=0; i<ny; i++){
+    p = i*nx;
+    if (i == 0 || i == ny-1){
+      memset(inv+p, 1, nx);
+      continue;
+    }
+    inv[p] = 1;
+    for (j=1; j<nx-1; j++){
+      p = i*nx+j;
+      if (get_off(QAI, p) || dist_[p] > maxdist){
+        inv[p] = 1;
+      } else {
+        inv[p] = 0;
+        nvalid++;
+      }
+    }
+    inv[i*nx+nx-1] = 1;
+  }
+
+  free((void*)dist_);
+  // nothing close to a cloud: masked image is constant -> probability is 0
+  if (nvalid == 0){
+    memset(spr_, 0, nc*sizeof(short));
+    free((void*)inv);
+
+#ifdef FORCE_CLOCK
+    proctime_print("shadow probability computation", TIME);
+#endif
+
+    *SPR = spr_;
+    return SUCCESS;
+  }
+
+  for (b=0; b<nb; b++){
+    alloc((void**)&mask_b[b], nc, sizeof(short));
+    alloc((void**)&mark_b[b], nc, sizeof(short));
   }
 
 
   // Zhu et al., 2015 modification
   // use NIR and SWIR
-  
+
   if (nthread == 1) nthr = 1; else nthr = nb;
-  
-  #pragma omp parallel num_threads(nthr) private(i, j, p, mask_, marker_, toa_, bck) shared(nb, nx, ny, nc, nland, domains, lo, maxdist, dist_, lnd_, spr_, TOA, QAI) reduction(+: err) default(none)
+
+#pragma omp parallel num_threads(nthr) private(p, toa_, bck) shared(nb, nc, nx, ny, nland, domains, lo, inv, lnd_, TOA, mask_b, mark_b) reduction(+: err) default(none)
   {
-    unsigned int *h = NULL;
-    alloc((void**)&mask_,   nc,    sizeof(short));
-    alloc((void**)&marker_, nc,    sizeof(short));
-    alloc((void**)&h,   65536, sizeof(unsigned int));
+  unsigned int *h = NULL;
+  alloc((void**)&h, 65536, sizeof(unsigned int));
 
-    #pragma omp for
-    for (b=0; b<nb; b++){
-      
-      if ((toa_  = get_domain_short(TOA, domains[b]))   == NULL){ err++; continue;}
+#pragma omp for
+  for (b=0; b<nb; b++){
 
-      memmove(mask_, toa_, nc*sizeof(short));
+    short *mask_   = mask_b[b];
+    short *marker_ = mark_b[b];
 
-      bck = quantile_short(toa_, lnd_, nc, nland, lo, h);
+    if ((toa_ = get_domain_short(TOA, domains[b])) == NULL){ err++; continue;}
 
-      for (i=0, p=0; i<ny; i++){
-      for (j=0; j<nx; j++, p++){
-          if (i == 0 || i == ny-1 || j == 0 || j == nx-1 || 
-              get_off(QAI, p) || dist_[p] > maxdist) mask_[p] = bck;
-      }
-      }
+    bck = quantile_short(toa_, lnd_, nc, nland, lo, h);
 
-      greyscale_reconstruction_(mask_, marker_, nx, ny);
-      for (p=0; p<nc; p++) marker_[p]  -= mask_[p];
+    for (p=0; p<nc; p++) mask_[p] = inv[p] ? bck : toa_[p];
 
-    }
-
-    #pragma omp critical
-    {
-      for (p=0; p<nc; p++){
-        if (marker_[p] < spr_[p]) spr_[p] = marker_[p];
-      }
-    }
-
-    free((void*)mask_);
-    free((void*)marker_);
-
+    greyscale_reconstruction_(mask_, marker_, nx, ny);
 
   }
-  
-  if (err > 0){ printf("error in shadow probability. "); return FAILURE;}
-  
-  free((void*)dist_);
+
+  free((void*)h);
+  }
+
+  free((void*)inv);
+
+  if (err > 0){
+    for (b=0; b<nb; b++){ free((void*)mask_b[b]); free((void*)mark_b[b]);}
+    free((void*)spr_);
+    printf("error in shadow probability. "); return FAILURE;
+  }
 
 
-  #ifdef FORCE_CLOCK
+  // fused (marker - mask) and min over bands, no critical section
+#pragma omp parallel for num_threads(nthread) shared(nc, spr_, mask_b, mark_b) default(none)
+  for (p=0; p<nc; p++){
+    short a = (short)(mark_b[0][p] - mask_b[0][p]);
+    short c = (short)(mark_b[1][p] - mask_b[1][p]);
+    spr_[p] = (a < c) ? a : c;
+  }
+
+  for (b=0; b<nb; b++){ free((void*)mask_b[b]); free((void*)mark_b[b]);}
+
+
+#ifdef FORCE_CLOCK
   proctime_print("shadow probability computation", TIME);
-  #endif
+#endif
 
   *SPR = spr_;
   return SUCCESS;
