@@ -1438,7 +1438,12 @@ int shadow_matching(float shdprob, float lowtemp, float hightemp, atc_t *atc, br
 int i, j, p, nx, ny, nc, nf, ne, g, k;
 int skip, influence = 8;
 int nobj, id, size_max = 0, size;
-int *P = NULL, *best_P = NULL;
+int *P = NULL;
+int *G = NULL;            // item 1: cached convert_brick_ji2p result
+float *h0 = NULL;         // item 2: per-pixel height offset
+float best_base = 0;      // item 7
+int nin;                  // item 6
+unsigned char *pot = NULL; // item 4
 double *qtemp = NULL; // need to be double for GSL quantile function
 double res;
 float radius, core, basetemp;
@@ -1570,17 +1575,19 @@ short  *temp_      = NULL;
   #ifdef FORCE_DEBUG
   printf("max. object size: %d\n", size_max);
   #endif
+  alloc((void**)&pot, nc, sizeof(unsigned char));
 
-
-
-
-
-  #pragma omp parallel private(k, g, x, y, p, size, radius, core, basetemp, base_min, base_max, base, height, shadow, total, match, best_match, qtemp, P, best_P) shared(nx, ny, res, nobj, influence, lowtemp, hightemp, dlapse, rlapse, wlapse, base_step, size_max, spr_, shdprob, cld_, slp_, atc, sun_, view_, QAI, CCL, shd_, array_x, array_y, array_temp, SIZE, temp_) default(none) 
+#pragma omp parallel for private(p) shared(nc, pot, spr_, shdprob, cld_, slp_, QAI) default(none)
+  for (p=0; p<nc; p++){
+    pot[p] = (spr_[p] > (shdprob*10000) && !cld_[p] && !(slp_[p] == 0 && get_water(QAI, p)));
+  }
+  #pragma omp parallel private(k, g, x, y, p, size, radius, core, basetemp, base_min, base_max, base, height, shadow, total, match, best_match, best_base, nin, qtemp, P, G, h0) shared(nx, ny, res, nobj, influence, lowtemp, hightemp, dlapse, rlapse, wlapse, base_step, size_max, spr_, pot, shdprob, cld_, slp_, atc, sun_, view_, QAI, CCL, shd_, array_x, array_y, array_temp, SIZE, temp_) default(none)
   {
 
     if (temp_ != NULL) alloc((void**)&qtemp, size_max, sizeof(double));
-    alloc((void**)&P,       size_max, sizeof(int));
-    alloc((void**)&best_P,  size_max, sizeof(int));
+    alloc((void**)&P,  size_max, sizeof(int));
+    alloc((void**)&G,  size_max, sizeof(int));
+    alloc((void**)&h0, size_max, sizeof(float));
 
     #pragma omp for schedule(guided)
     for (id=0; id<nobj; id++){
@@ -1621,49 +1628,47 @@ short  *temp_      = NULL;
         base_min = 200;
         base_max = 12000;
       }
-
+      /** Predict cloud pixel height:
+      +++ A cloud DEM is used for a more exact calculation of projected
+      +++ shadow position. The height is predicted using the temperature
+      +++ band and the wet adiabatic lapse rate, plus the cloud base
+      +++ height. If there is no temperature band, the cloud is assumed
+      +++ to be a flat plate. **/
+      for (k=0; k<size; k++){
+        G[k]  = convert_brick_ji2p(QAI, atc->xy_sun, array_y[id][k], array_x[id][k]);
+        h0[k] = (temp_ != NULL) ? (basetemp-array_temp[id][k])/wlapse : 0;
+      }
 
       /** Base height iteration:
       +++ Lift the cloud up across the possible base height range and match
       +++ the casted shadow with the potential shadow layer. **/
       for (base=base_min, best_match=0; base<=base_max; base+=base_step){
 
-        for (k=0, shadow=0, total=0; k<size; k++){
+        for (k=0, shadow=0, total=0, nin=0; k<size; k++){
 
-          /** Predict cloud pixel height:
-          +++ A cloud DEM is used for a more exact calculation of projected
-          +++ shadow position. The height is predicted using the temperature
-          +++ band and the wet adiabatic lapse rate, plus the cloud base
-          +++ height. If there is no temperature band, the cloud is assumed
-          +++ to be a flat plate. **/
-          if (temp_ != NULL){
-            height = (basetemp-array_temp[id][k])/wlapse + base;
-          } else {
-            height = base;
-          }
+          height = h0[k] + base;
 
           /** Position of projected shadow:
           +++ Copmpute the position of the projected shadow as a function of
           +++ view and sun geometry. **/
-          g = convert_brick_ji2p(QAI, atc->xy_sun, array_y[id][k], array_x[id][k]);
+          g = G[k];
           shadow_position(height, array_x[id][k], array_y[id][k], res, g, sun_, view_, &x, &y);
-
           if (y < 0 || y >= ny || x < 0 || x >= nx){
             P[k] = -1; continue;}
 
-          P[k] = p = nx*y + x; 
-
+          nin++;
+          P[k] = p = nx*y + x;
 
           /** Simplified match:
           +++ A shadow is matched if it is a potential shadow, but not a 
           +++ cloud. The shadow matching 'runs' into big clouds if clouds
           +++ are also permitted. The match is measured relative to the
           +++ complete shifted object, excluding the original cloud. **/
-          if (spr_[p] > (shdprob*10000) && !cld_[p] && !(slp_[p] == 0 && get_water(QAI, p))) shadow += spr_[p]/750.0;
+          if (pot[p]) shadow += spr_[p]/750.0;
           if (CCL[p] != id+1) total++;
 
         }
-
+        if (nin == 0) break;
         /** Matching measure:
         +++ The match is expressed in fractions between 0...1 **/
         if (total > 0) match = shadow/total; else match = 0;
@@ -1686,7 +1691,7 @@ short  *temp_      = NULL;
         +++ Record the position and value of the best match. **/
         if (match > best_match){
           best_match = match;
-          for (k=0; k<size; k++) best_P[k] = P[k];
+          best_base  = base;
         }
 
       }
@@ -1700,9 +1705,10 @@ short  *temp_      = NULL;
       +++ best match is better than 85%, it was already drawn. **/
       if (best_match < 0.85 && best_match > 0){
         for (k=0; k<size; k++){
-          if ((p = best_P[k]) != -1){
-            shd_[p] = true;
-          }
+          height = h0[k] + best_base;
+          shadow_position(height, array_x[id][k], array_y[id][k], res, G[k], sun_, view_, &x, &y);
+          if (y < 0 || y >= ny || x < 0 || x >= nx) continue;
+          shd_[nx*y + x] = true;
         }
       }
 
@@ -1710,10 +1716,11 @@ short  *temp_      = NULL;
 
     if (temp_ != NULL) free((void*)qtemp);
     free((void*)P);
-    free((void*)best_P);
+    free((void*)G);
+    free((void*)h0);
 
   } // end omp parallel
-  
+  free((void*)pot);
 
   #ifdef FORCE_DEBUG
   brick_t *BRICK = NULL; small *brick_ = NULL;
