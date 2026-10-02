@@ -189,7 +189,66 @@ int mins;
 
   return;
 }
+void fproctime_append(double elapsed, char **runtime_log, size_t *log_size) {
+  char temp[32];
+  // Format the double into a temporary string
+  int len = snprintf(temp, sizeof(temp), "%.6f;", elapsed);
 
+  // Allocate/reallocate memory to fit the new string
+  char *new_log = realloc(*runtime_log, *log_size + len + 1);
+  if (new_log) {
+    *runtime_log = new_log;
+    strcpy(*runtime_log + *log_size, temp);
+    *log_size += len;
+  }
+}
+void fproctime_append_int(int elapsed, char **runtime_log, size_t *log_size) {
+  char temp[32];
+  // Format the double into a temporary string
+  int len = snprintf(temp, sizeof(temp), "%d;", elapsed);
+
+  // Allocate/reallocate memory to fit the new string
+  char *new_log = realloc(*runtime_log, *log_size + len + 1);
+  if (new_log) {
+    *runtime_log = new_log;
+    strcpy(*runtime_log + *log_size, temp);
+    *log_size += len;
+  }
+}
+void fproctime_append_str(const char *fimg, char **runtime_log, size_t *log_size) {
+  if (fimg == NULL) return;
+
+  // Get the length of the string to append
+  size_t len = strlen(fimg);
+  size_t total_append_len = len + 1;
+  char *new_log = realloc(*runtime_log, *log_size + total_append_len + 1);
+
+  if (new_log) {
+    *runtime_log = new_log;
+
+    memcpy(*runtime_log + *log_size, fimg, len);
+    (*runtime_log)[*log_size + len] = ';';
+
+    // Update size and ensure null termination
+    *log_size += total_append_len;
+    (*runtime_log)[*log_size] = '\0';
+  }
+}
+void fproctime_write_runtimechar(par_ll_t *pl2, char *runtime_log) {
+  if (runtime_log) {
+    char full_path[1024];
+    snprintf(full_path, sizeof(full_path), "%s/timingcc.csv", pl2->d_log);
+    FILE *fp = fopen(full_path, "a");
+    if (fp) {
+	const char *tag = (strstr(full_path, "mnt") != NULL) ? "bash" : "docker";
+        size_t len = strlen(runtime_log);
+	//fprintf(fp, "%s;%.*s\n", tag, (int)(len - 1), runtime_log);
+        fprintf(fp, "%s;%s;%.*s\n", pl2->d_level1, tag, (int)(len - 1), runtime_log);
+	fclose(fp);
+    }
+    free(runtime_log); // Clean up
+  }
+}
 
 /** Equality test for floats
 +++ This function tests for quasi equality of floats

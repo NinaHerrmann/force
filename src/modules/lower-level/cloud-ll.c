@@ -1738,7 +1738,153 @@ short  *temp_      = NULL;
 --- QAI:     Quality Assurance Information (modified)
 +++ Return:  SUCCESS/FAILURE
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-int detect_clouds(par_ll_t *pl2, int mission, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI){
+int detect_clouds(par_ll_t *pl2, int mission, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI, char **runtime_log, size_t *log_size){
+int npix, nclear, nland, ncloud, nc, p;
+float lowtemp = -1.0, hightemp = -1.0;
+float cc;
+small *pcp_   = NULL;
+small *clr_   = NULL;
+small *lnd_   = NULL;
+small *brt_   = NULL;
+short *var_   = NULL;
+short *spr_   = NULL;
+small *cld_   = NULL;
+small *shd_   = NULL;
+
+  struct timespec start, end;
+  double elapsed;
+
+  #ifdef FORCE_CLOCK
+  time_t TIME; time(&TIME);
+  #endif
+  
+  
+  cite_me(_CITE_CLOUD_);
+
+
+  nc = get_brick_ncells(QAI);
+
+  clock_gettime(CLOCK_MONOTONIC, &start);
+
+  /** Potential Cloud Pixels **/
+  if (potential_cloud(pl2, &npix, &nclear, &nland, 
+        TOA, QAI, EXP, &pcp_, &clr_, &lnd_, &brt_, &var_) == FAILURE){
+    printf("error in PCP module.\n"); return FAILURE;}
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+  fproctime_append(elapsed, runtime_log, log_size);
+  clock_gettime(CLOCK_MONOTONIC, &start);
+
+  // more than 0.1% clear pixels? -> compute probabilities
+  if ((100.0*nclear/(float)npix) > 0.1){
+
+    /** Cloud Probability **/
+
+    if (mission == LANDSAT){
+      if (cloud_probability(pl2->nthread, npix, nclear, nland, &ncloud, pl2->cldprob, &cc, &lowtemp, &hightemp,
+          TOA, QAI, pcp_, clr_, lnd_, brt_, var_, &cld_) == FAILURE){
+        printf("error in cloud probability module.\n"); return FAILURE;}
+    } else if (mission == SENTINEL2){
+      if (cloud_parallax(nclear, nland, npix, &ncloud, &cc, TOA, QAI, pcp_, clr_, lnd_, brt_, var_, &cld_) == FAILURE){
+        printf("error in cloud parallax module.\n"); return FAILURE;}
+    }
+    free((void*)pcp_); free((void*)clr_); free((void*)brt_); free((void*)var_);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
+    // less than 80% of max. allowable cloud cover? -> shadow matching
+    if (cc <= pl2->maxcc*0.8){
+
+      // if there is no cloud, there is no shadow
+      if (ncloud > 0){
+        
+        shadow_probability(pl2->nthread, nland, atc, TOA, QAI, lnd_, cld_, &spr_);
+        free((void*)lnd_);
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+        fproctime_append(elapsed, runtime_log, log_size);
+        clock_gettime(CLOCK_MONOTONIC, &start);
+        shadow_matching(pl2->shdprob, lowtemp, hightemp, atc, TOA, QAI, EXP, cld_, spr_, &shd_);
+        free((void*)spr_);
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+        fproctime_append(elapsed, runtime_log, log_size);
+        clock_gettime(CLOCK_MONOTONIC, &start);
+      } else {
+        
+        free((void*)lnd_); free((void*)spr_);
+        alloc((void**)&shd_, nc, sizeof(small));
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+        fproctime_append(elapsed, runtime_log, log_size);
+        clock_gettime(CLOCK_MONOTONIC, &start);
+      }
+
+      // create the cloud/shadow mask and calculate distance
+      atc->cc = finalize_cloud(pl2, npix, atc, TOA, QAI, DEM, cld_, shd_);
+      clock_gettime(CLOCK_MONOTONIC, &end);
+      elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+      fproctime_append(elapsed, runtime_log, log_size);
+    // more than 80% of max. allowable cloud cover? -> everything is cloud or shadow
+    } else {
+
+      alloc((void**)&shd_, nc, sizeof(small));
+      free((void*)lnd_);
+
+      for (p=0; p<nc; p++) shd_[p] = true;
+
+      atc->cc = finalize_cloud(pl2, npix, atc, TOA, QAI, DEM, cld_, shd_);
+      clock_gettime(CLOCK_MONOTONIC, &end);
+      elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+      fproctime_append(elapsed, runtime_log, log_size);
+      atc->cc = 100;
+
+    }
+
+
+   // less than 0.1% clear pixels? -> everything is cloud or shadow
+  } else {
+
+    alloc((void**)&cld_, nc, sizeof(small));
+    alloc((void**)&shd_, nc, sizeof(small));
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    for (p=0; p<nc; p++){ cld_[p] = pcp_[p]; shd_[p] = true;}
+    free((void*)pcp_); free((void*)clr_); free((void*)brt_); free((void*)var_);
+
+    atc->cc = finalize_cloud(pl2, npix, atc, TOA, QAI, DEM, cld_, shd_);
+    atc->cc = 100;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    fproctime_append(elapsed, runtime_log, log_size);
+  }
+  
+  free((void*)cld_); free((void*)shd_);
+
+  #ifdef FORCE_DEBUG
+  print_brick_info(QAI); set_brick_open(QAI, OPEN_CREATE); write_brick(QAI);
+  #endif
+
+  printf("cc: %6.2f%%. ", atc->cc);
+  fproctime_append(atc->cc, runtime_log, log_size);
+  #ifdef CMIX_FAS
+  exit(1);
+  #endif
+
+  if (atc->cc > pl2->maxcc){ printf("Skip. "); return CANCEL;}
+
+  #ifdef FORCE_CLOCK
+  proctime_print("cloud module", TIME);
+  #endif
+
+  return SUCCESS;
+}
+
+int d_detect_clouds(par_ll_t *pl2, int mission, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI){
 int npix, nclear, nland, ncloud, nc, p;
 float lowtemp = -1.0, hightemp = -1.0;
 float cc;
