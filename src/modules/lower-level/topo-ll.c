@@ -760,8 +760,7 @@ float *xy_ms = NULL;
 float **xyz_rho_p = NULL;
 float **xyz_tss = NULL;
 float **xyz_tsd = NULL;
-small *valid = NULL;
-int *off_flat = NULL;
+samp_t *samp = NULL;
 
 
   #ifdef FORCE_CLOCK
@@ -824,8 +823,7 @@ int *off_flat = NULL;
   /** allocate memory **/
   alloc((void**)&cor_,  nc, sizeof(float));
   alloc((void**)&swir_, nc, sizeof(float));
-  alloc((void**)&valid, nc, sizeof(small));
-  alloc((void**)&off_flat, nk*nk, sizeof(int));
+  alloc((void**)&samp,  nc, sizeof(samp_t));
 
 
   /** compute SWIR index **/
@@ -847,31 +845,32 @@ int *off_flat = NULL;
   }
 
 
-  // Precompute the validity check to not do it every time.
-  #pragma omp parallel shared(nc, QAI, ill_, slp_, s_min, valid) default(none)
-  {
+  // Pack sample data; invalid pixels get swir = NaN.
+  #pragma omp parallel shared(nc, QAI, ill_, slp_, sw2_, s_min, swir_, samp) default(none)
+ {
 
   #pragma omp for schedule(guided)
     for (p=0; p<nc; p++){
-      valid[p] = (!get_off(QAI, p) && ill_[p] >= 0 && slp_[p] >= s_min) ? 1 : 0;
+      if (!get_off(QAI, p) && ill_[p] >= 0 && slp_[p] >= s_min){
+        samp[p].swir = swir_[p]; samp[p].ill = ill_[p]; samp[p].sw2 = sw2_[p];
+      } else {
+        samp[p].swir = NAN; samp[p].ill = 0; samp[p].sw2 = 0;
+      }
     }
 
   }
-  for (ii=0; ii<nk; ii++)
-    for (jj=0; jj<nk; jj++)
-      off_flat[ii*nk+jj] = K[ii]*nx + K[jj];
-  /** estimate C for every pixel **/
+  free((void*)swir_);
   
-  #pragma omp parallel private(j, p, ii, jj, ip, jp, np, g, z, rho_p, tss, tsd, szen, ms, f, h0, c_, num, mx, my, varx, vary, cov, gain, offset) shared(nx, ny, nk, K, b_sw2, QAI, sw2_, swir_, dem_, slp_, ill_, s_min, cor_, valid, off_flat, xyz_rho_p, xyz_tss, xyz_tsd, xy_szen, xy_ms, atc) default(none)
+  #pragma omp parallel private(j, p, ii, jj, g, z, rho_p, tss, tsd, szen, ms, f, h0, c_, num, mx, my, varx, vary, cov, gain, offset) shared(nx, ny, nk, K, QAI, dem_, slp_, ill_, s_min, cor_, samp, xyz_rho_p, xyz_tss, xyz_tsd, xy_szen, xy_ms, atc) default(none)
   {
-    unsigned char *row_valid = NULL, *col_valid = NULL;
-    alloc((void**)&row_valid, nk, sizeof(unsigned char));
-    alloc((void**)&col_valid, nk, sizeof(unsigned char));
+  double *bx = NULL, *by = NULL;                    // NEW: per-thread buffers
+  alloc((void**)&bx, nk*nk, sizeof(double));
+  alloc((void**)&by, nk*nk, sizeof(double));
     #pragma omp for schedule(guided)
     for (i=0; i<ny; i++){
-      for (ii=0; ii<nk; ii++){
-        row_valid[ii] = (i+K[ii] >= 0 && i+K[ii] <= ny-1) ? 1 : 0;
-      }
+      int ii0 = 0, ii1 = nk-1;
+      while (ii0 < nk && K[ii0] > ny-1-i) ii0++;
+      while (ii1 >= ii0 && K[ii1] < -i) ii1--;
       for (j=0; j<nx; j++){
 
       p = i*nx+j;
@@ -896,43 +895,31 @@ int *off_flat = NULL;
       // only do for sloped pixels > 2°
       if (slp_[p] > s_min){
 
-        for (jj=0; jj<nk; jj++)
-          col_valid[jj] = (j+K[jj] >= 0 && j+K[jj] <= nx-1) ? 1 : 0;
-        num = mx = my = varx = vary = cov = 0.0;
+        int jj0 = 0, jj1 = nk-1;                      // valid column range
+        while (jj0 < nk && K[jj0] > nx-1-j) jj0++;
+        while (jj1 >= jj0 && K[jj1] < -j) jj1--;
 
-        // sample neighborhood
-        for (ii=0; ii<nk; ii++){
-          if (!row_valid[ii]) continue;
-        for (jj=0; jj<nk; jj++){
-          ip = i+K[ii]; jp = j+K[jj];
-          if (!col_valid[jj]) continue;
-          np = p + off_flat[ii*nk+jj];
+        const samp_t *c0 = samp + p;                  // centre pixel
+        const float swp = c0->swir;
+        int n = 0;
 
-          // only use illuminated and sloped pixels > 2°
-          // if (get_off(QAI, np) || ill_[np] < 0 || slp_[np] < s_min) continue;
-          if (!valid[np]) continue;
-
-          // only do for same land cover
-          if (fabs(swir_[p]-swir_[np]) > 0.025) continue;
-
-          num++;
-
-          // linear regression
-          if (fequal(num, 1)){
-            mx = ill_[np]/10000.0; my = sw2_[np]/10000.0;
-          } else {
-            covar_recurrence(ill_[np]/10000.0, sw2_[np]/10000.0,
-            &mx, &my, &varx, &vary, &cov, num);
-          }
-          /** TODO: quiet likely chance for a major speedup if we restrict the number of samples.
-          +++ Discuss with the others.  if (num >= MAX_SAMPLES) goto sampling_done;
-          +++ Also discuss then K[ do we firstly want close neighbours or large neighbours?**/
-
+        // phase 1: filter, collect in the original order
+        for (ii=ii0; ii<=ii1; ii++){
+          const samp_t *rp = c0 + K[ii]*nx;
+          for (jj=jj0; jj<=jj1; jj++){
+              const samp_t *e = rp + K[jj];
+              bx[n] = e->ill/10000.0;                   // branch-free: always write,
+              by[n] = e->sw2/10000.0;                   // advance n only if accepted
+              n += (fabs(swp - e->swir) <= 0.025);      // NaN (invalid) -> false
+            }
         }
-        }
-        // TODO incase of regression change sampling_done:;
+        num = (double)n;
 
-        if (num > 2){
+        if (n > 2){
+          // phase 2: recurrence over leftovers, same order as before
+          mx = bx[0]; my = by[0]; varx = vary = cov = 0.0;
+          for (int s=1; s<n; s++)
+              covar_recurrence(bx[s], by[s], &mx, &my, &varx, &vary, &cov, (double)(s+1));
 
           // regression parameters + c-factor
           linreg_coefs(mx, my, covariance(cov, num), 
@@ -964,12 +951,10 @@ int *off_flat = NULL;
 
     }
     }
-    free((void*)row_valid);
-    free((void*)col_valid);
+    free((void*)bx);
+    free((void*)by);
   }
-  free((void*)off_flat);
-  free((void*)swir_);
-  free((void*)valid);
+  free((void*)samp);
   free((void*)xyz_rho_p); free((void*)xyz_tss); free((void*)xyz_tsd);
   
 

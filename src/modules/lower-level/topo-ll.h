@@ -53,7 +53,12 @@ typedef struct {
   brick_t *sky; // sky view factor
   brick_t *c;   // C-factor SWIR2
 } top_t;
-
+typedef struct
+{
+  float swir;
+  short ill;
+  short sw2;
+} samp_t;
 void free_topography(top_t *top);
 int compile_topography(par_ll_t *pl2, atc_t *atc, top_t **topography, brick_t *QAI);
 brick_t *cfactor_topography(atc_t *atc, brick_t *TOA, brick_t *QAI, brick_t *DEM, brick_t *EXP, brick_t *ILL);
