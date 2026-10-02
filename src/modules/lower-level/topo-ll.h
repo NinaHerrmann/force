@@ -30,7 +30,7 @@ Topographic effects header
 
 #include <stdio.h>   // core input and output functions
 #include <stdlib.h>  // standard general utilities library
-
+#include <immintrin.h>
 #include "../cross-level/const-cl.h"
 #include "../cross-level/brick_base-cl.h"
 #include "../cross-level/brick_io-cl.h"

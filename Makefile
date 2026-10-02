@@ -57,7 +57,7 @@ RSTATS_LIBS = $(shell R CMD config --ldflags | sed 's/ /\n/g' | grep '\-L') -lR
 ### Compiler
 
 # Compilation Flags
-CFLAGS=-O3 -Wall -fopenmp
+CFLAGS=-O3 -Wall -fopenmp -march=native
 #CFLAGS=-g -Wall -fopenmp
 
 GCC=gcc $(CFLAGS)

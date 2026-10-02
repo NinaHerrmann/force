@@ -735,18 +735,16 @@ brick_t *DEM = NULL;
 +++ Return: SUCCESS/FAILURE
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
 brick_t *cfactor_topography(atc_t *atc, brick_t *TOA, brick_t *QAI, brick_t *DEM, brick_t *EXP, brick_t *ILL){
-int i, j, p, ii, jj, ip, jp, np, nx, ny, nc, g, z;
+int i, j, p, ip, jp, np, nx, ny, nc;
 int b_sw2;
 ushort s_min  = 350; // 2° slope
-double mx, my;
-double cov, varx, vary, num;
-double offset, gain;
-float c_, h0, f, cf;
+double mx;
+double  num;
+float cf;
 float *cor_ = NULL;
 float tmp;
 double res;
 float *swir_ = NULL;
-float rho_p, tss, tsd, szen, ms;
 int k, nk = 0, *K = NULL;
 brick_t *CF = NULL;
 ushort  *cf_ = NULL;
@@ -760,17 +758,18 @@ float *xy_ms = NULL;
 float **xyz_rho_p = NULL;
 float **xyz_tss = NULL;
 float **xyz_tsd = NULL;
-samp_t *samp = NULL;
+double *xd = NULL, *yd = NULL, *wtab = NULL;
+float  *swn = NULL;
 
 
   #ifdef FORCE_CLOCK
   time_t TIME; time(&TIME);
   #endif
-  
-  
+
+
   cite_me(_CITE_TOPCOR_);
-  
-  
+
+
   CF = copy_brick(QAI, 1, _DT_USHORT_);
   set_brick_name(CF, "FORCE C-factor brick");
   set_brick_product(CF, "CFC");
@@ -790,14 +789,14 @@ samp_t *samp = NULL;
   if ((slp_ = get_band_ushort(EXP, ZEN))      == NULL) return NULL;
   if ((ill_ = get_band_short(ILL, 0))         == NULL) return NULL;
   if ((b_sw2 = find_domain(TOA, "SWIR2")) < 0) return NULL;
-  
+
   if ((xy_szen     = get_band_float(atc->xy_sun,   ZEN)) == NULL) return NULL;
   if ((xy_ms       = get_band_float(atc->xy_sun,  cZEN)) == NULL) return NULL;
   if ((xyz_rho_p       = atc_get_band_reshaped(atc->xyz_rho_p, b_sw2))     == NULL) return NULL;
   if ((xyz_tss       = atc_get_band_reshaped(atc->xyz_tss, b_sw2))     == NULL) return NULL;
   if ((xyz_tsd       = atc_get_band_reshaped(atc->xyz_tsd, b_sw2))     == NULL) return NULL;
 
-  
+
   /** kernel for sampling neighborhood **/
   alloc((void**)&K, 3000/res*2+1, sizeof(int));
 
@@ -823,152 +822,176 @@ samp_t *samp = NULL;
   /** allocate memory **/
   alloc((void**)&cor_,  nc, sizeof(float));
   alloc((void**)&swir_, nc, sizeof(float));
-  alloc((void**)&samp,  nc, sizeof(samp_t));
+  alloc((void**)&xd,   nc, sizeof(double));
+  alloc((void**)&yd,   nc, sizeof(double));
+  alloc((void**)&swn,  nc, sizeof(float));
+  alloc((void**)&wtab, nk*nk+1, sizeof(double));
 
 
   /** compute SWIR index **/
-  
-  #pragma omp parallel private(tmp) shared(nc, QAI, sw1_, sw2_, swir_) default(none) 
+
+  #pragma omp parallel private(tmp) shared(nc, QAI, sw1_, sw2_, swir_) default(none)
   {
 
     #pragma omp for schedule(guided)
 
     for (p=0; p<nc; p++){
-      
+
       if (get_off(QAI, p)) continue;
 
       tmp = sw1_[p]/10000.0+sw2_[p]/10000.0;
       if (tmp == 0) swir_[p] = 0; else swir_[p] = (sw1_[p]/10000.0-sw2_[p]/10000.0)/tmp;
 
     }
-    
+
   }
 
+  /** precompute x/y as double, wtab, and NaN-marked SWIR **/
+  for (k=1; k<=nk*nk; k++) wtab[k] = (k-1)/(double)k;
 
-  // Pack sample data; invalid pixels get swir = NaN.
-  #pragma omp parallel shared(nc, QAI, ill_, slp_, sw2_, s_min, swir_, samp) default(none)
- {
+  #pragma omp parallel for schedule(guided)
+  for (p=0; p<nc; p++){
+      xd[p] = ill_[p]/10000.0;
+      yd[p] = sw2_[p]/10000.0;
+      swn[p] = (!get_off(QAI, p) && ill_[p] >= 0 && slp_[p] >= s_min) ? swir_[p] : NAN;
+  }
+  /** estimate C for every pixel **/
 
-  #pragma omp for schedule(guided)
-    for (p=0; p<nc; p++){
-      if (!get_off(QAI, p) && ill_[p] >= 0 && slp_[p] >= s_min){
-        samp[p].swir = swir_[p]; samp[p].ill = ill_[p]; samp[p].sw2 = sw2_[p];
-      } else {
-        samp[p].swir = NAN; samp[p].ill = 0; samp[p].sw2 = 0;
+  #pragma omp parallel
+{
+  float  *swp = NULL, *c_row = NULL, *rho_row = NULL;
+  double *st  = NULL;                       // st[0..5][nx]: mx,my,vx,vy,cv,num
+  alloc((void**)&swp,     nx+4, sizeof(float));
+  alloc((void**)&c_row,   nx,   sizeof(float));
+  alloc((void**)&rho_row, nx,   sizeof(float));
+  alloc((void**)&st,      6*nx, sizeof(double));
+  const int K0 = K[0];
+
+  #pragma omp for schedule(dynamic,1)
+  for (int i=0; i<ny; i++){
+
+    /* A: per-pixel setup (same formulas as before) */
+    for (int j=0; j<nx; j++){
+      int p = i*nx+j;
+      swp[j] = NAN; st[5*nx+j] = 0;
+      if (get_off(QAI, p) || ill_[p] < 0) continue;
+      int g = convert_brick_ji2p(QAI, atc->xy_sun, i, j);
+      int z = dem_[p];
+      float szen = xy_szen[g], ms = xy_ms[g];
+      float f  = f_factor(xyz_tss[z][g], xyz_tsd[z][g]);
+      float h0 = (M_PI+2*szen)/(2.0*M_PI);
+      c_row[j]   = c_factor_com(h0, f, ms);
+      rho_row[j] = xyz_rho_p[z][g];
+      if (slp_[p] > s_min) swp[j] = swir_[p];     // NaN = no sampling
+    }
+
+    /* B: sampling */
+    const int row_in = (i >= K0 && i <= ny-1-K0);
+    int j = 0;
+    while (j < nx){
+      int p = i*nx+j;
+
+      if (row_in && j >= K0 && j+3 <= nx-1-K0){   /* 4 pixels at once */
+        const __m128 sgn = _mm_set1_ps(-0.0f);
+        const __m256d thr = _mm256_set1_pd(0.025), one = _mm256_set1_pd(1.0);
+        const __m128 sp = _mm_loadu_ps(swp+j);
+        __m256d mx = _mm256_setzero_pd(), my = mx, vx = mx, vy = mx, cv = mx, cnt = mx;
+
+        for (int ii=0; ii<nk; ii++){
+          const long r = p + (long)K[ii]*nx;
+          for (int jj=0; jj<nk; jj++){
+            const long q = r + K[jj];
+            __m128 d = _mm_andnot_ps(sgn, _mm_sub_ps(sp, _mm_loadu_ps(swn+q)));
+            __m256d m = _mm256_cmp_pd(_mm256_cvtps_pd(d), thr, _CMP_LE_OQ);
+            if (_mm256_testz_pd(m, m)) continue;  // NaN lanes never pass
+
+            __m256d x = _mm256_loadu_pd(xd+q), y = _mm256_loadu_pd(yd+q);
+            __m256d n  = _mm256_add_pd(cnt, one);
+            __m256d dx = _mm256_sub_pd(x, mx), dy = _mm256_sub_pd(y, my);
+            __m256d nmx = _mm256_add_pd(mx, _mm256_div_pd(dx, n));
+            __m256d nmy = _mm256_add_pd(my, _mm256_div_pd(dy, n));
+            __m256d nvx = _mm256_add_pd(vx, _mm256_mul_pd(dx, _mm256_sub_pd(x, nmx)));
+            __m256d nvy = _mm256_add_pd(vy, _mm256_mul_pd(dy, _mm256_sub_pd(y, nmy)));
+            __m256d w   = _mm256_div_pd(cnt, n);              // (n-1)/n
+            __m256d ncv = _mm256_add_pd(cv, _mm256_mul_pd(_mm256_mul_pd(w, dx), dy));
+
+            mx = _mm256_blendv_pd(mx, nmx, m);  my = _mm256_blendv_pd(my, nmy, m);
+            vx = _mm256_blendv_pd(vx, nvx, m);  vy = _mm256_blendv_pd(vy, nvy, m);
+            cv = _mm256_blendv_pd(cv, ncv, m);  cnt = _mm256_blendv_pd(cnt, n, m);
+          }
+        }
+        _mm256_storeu_pd(st+0*nx+j, mx); _mm256_storeu_pd(st+1*nx+j, my);
+        _mm256_storeu_pd(st+2*nx+j, vx); _mm256_storeu_pd(st+3*nx+j, vy);
+        _mm256_storeu_pd(st+4*nx+j, cv); _mm256_storeu_pd(st+5*nx+j, cnt);
+        j += 4;
+
+      } else {                                     /* scalar (edges) */
+        if (!isnan(swp[j])){
+          double smx=0, smy=0, svx=0, svy=0, scv=0; int n = 0;
+          const float sw = swp[j];
+          for (int ii=0; ii<nk; ii++){
+            if (i+K[ii] < 0 || i+K[ii] > ny-1) continue;
+            for (int jj=0; jj<nk; jj++){
+              if (j+K[jj] < 0 || j+K[jj] > nx-1) continue;
+              long q = p + (long)K[ii]*nx + K[jj];
+              if (!(fabs(sw-swn[q]) <= 0.025)) continue;   // NaN rejects
+              double x = xd[q], y = yd[q];
+              n++;
+              if (n == 1){ smx = x; smy = y; }
+              else {
+                double dx = x-smx, dy = y-smy;
+                double nmx = smx + dx/n, nmy = smy + dy/n;
+                svx = svx + dx*(x-nmx);
+                svy = svy + dy*(y-nmy);
+                scv = scv + wtab[n]*dx*dy;
+                smx = nmx; smy = nmy;
+              }
+            }
+          }
+          st[0*nx+j]=smx; st[1*nx+j]=smy; st[2*nx+j]=svx;
+          st[3*nx+j]=svy; st[4*nx+j]=scv; st[5*nx+j]=n;
+        }
+        j++;
       }
     }
 
-  }
-  free((void*)swir_);
-  
-  #pragma omp parallel private(j, p, ii, jj, g, z, rho_p, tss, tsd, szen, ms, f, h0, c_, num, mx, my, varx, vary, cov, gain, offset) shared(nx, ny, nk, K, QAI, dem_, slp_, ill_, s_min, cor_, samp, xyz_rho_p, xyz_tss, xyz_tsd, xy_szen, xy_ms, atc) default(none)
-  {
-  double *bx = NULL, *by = NULL;                    // NEW: per-thread buffers
-  alloc((void**)&bx, nk*nk, sizeof(double));
-  alloc((void**)&by, nk*nk, sizeof(double));
-    #pragma omp for schedule(guided)
-    for (i=0; i<ny; i++){
-      int ii0 = 0, ii1 = nk-1;
-      while (ii0 < nk && K[ii0] > ny-1-i) ii0++;
-      while (ii1 >= ii0 && K[ii1] < -i) ii1--;
-      for (j=0; j<nx; j++){
-
-      p = i*nx+j;
-
-      // only do for illuminated pixels
+    /* C: finalize (original logic) */
+    for (int j=0; j<nx; j++){
+      int p = i*nx+j;
       if (get_off(QAI, p) || ill_[p] < 0) continue;
-
-      g = convert_brick_ji2p(QAI, atc->xy_sun, i, j);
-      z = dem_[p];
-
-      // f-factor, h0-factor, theoretical C-factor
-      rho_p = xyz_rho_p[z][g];
-      tss   = xyz_tss[z][g];
-      tsd   = xyz_tsd[z][g];
-      szen  = xy_szen[g];
-      ms    = xy_ms[g];
-
-      f = f_factor(tss, tsd);
-      h0 = (M_PI+2*szen)/(2.0*M_PI);
-      c_ = c_factor_com(h0, f, ms);
-
-      // only do for sloped pixels > 2°
-      if (slp_[p] > s_min){
-
-        int jj0 = 0, jj1 = nk-1;                      // valid column range
-        while (jj0 < nk && K[jj0] > nx-1-j) jj0++;
-        while (jj1 >= jj0 && K[jj1] < -j) jj1--;
-
-        const samp_t *c0 = samp + p;                  // centre pixel
-        const float swp = c0->swir;
-        int n = 0;
-
-        // phase 1: filter, collect in the original order
-        for (ii=ii0; ii<=ii1; ii++){
-          const samp_t *rp = c0 + K[ii]*nx;
-          for (jj=jj0; jj<=jj1; jj++){
-              const samp_t *e = rp + K[jj];
-              bx[n] = e->ill/10000.0;                   // branch-free: always write,
-              by[n] = e->sw2/10000.0;                   // advance n only if accepted
-              n += (fabs(swp - e->swir) <= 0.025);      // NaN (invalid) -> false
-            }
-        }
-        num = (double)n;
-
-        if (n > 2){
-          // phase 2: recurrence over leftovers, same order as before
-          mx = bx[0]; my = by[0]; varx = vary = cov = 0.0;
-          for (int s=1; s<n; s++)
-              covar_recurrence(bx[s], by[s], &mx, &my, &varx, &vary, &cov, (double)(s+1));
-
-          // regression parameters + c-factor
-          linreg_coefs(mx, my, covariance(cov, num), 
-            variance(varx, num), &gain, &offset);
-
-          // if offset < path reflectance, 
-          // use path reflectance as offset and recompute gain
-          if (offset < rho_p){
-            offset = rho_p;
-            gain = (my-offset)/mx;
-          }
-
-          //if (gain < 0) continue;
-
-          // shield against extreme C-values
-          if (offset < 10*gain){
-            cor_[p] = c_factor_emp(offset, gain);
-          } else {
-            cor_[p] = 10.0;
-          }
-
-        }
-
+      double num = st[5*nx+j], gain, offset;
+      float c_ = c_row[j];
+      if (num > 2){
+        double mx = st[0*nx+j], my = st[1*nx+j];
+        linreg_coefs(mx, my, covariance(st[4*nx+j], num),
+                     variance(st[2*nx+j], num), &gain, &offset);
+        if (offset < rho_row[j]){ offset = rho_row[j]; gain = (my-offset)/mx; }
+        if (offset < 10*gain) cor_[p] = c_factor_emp(offset, gain);
+        else                  cor_[p] = 10.0;
       }
-
-      // use computed C if estimated C < 0
       if (cor_[p] < 0 || cor_[p] < c_) cor_[p] = c_;
       if (cor_[p] > USHRT_MAX/10000.0) cor_[p] = USHRT_MAX/10000.0;
-
     }
-    }
-    free((void*)bx);
-    free((void*)by);
   }
-  free((void*)samp);
+  free((void*)swp); free((void*)c_row); free((void*)rho_row); free((void*)st);
+}
+
+  free((void*)swir_);
+  free((void*)xd); free((void*)yd); free((void*)swn); free((void*)wtab);
   free((void*)xyz_rho_p); free((void*)xyz_tss); free((void*)xyz_tsd);
-  
+
 
   /** smooth C-factor with lowpass **/
 
-  #pragma omp parallel private(j, p, ip, jp, np, num, mx, cf) shared(nx, ny, QAI, ill_, cor_, cf_) default(none) 
+  #pragma omp parallel private(j, p, ip, jp, np, num, mx, cf) shared(nx, ny, QAI, ill_, cor_, cf_) default(none)
   {
 
     #pragma omp for schedule(guided)
     for (i=0; i<ny; i++){
     for (j=0; j<nx; j++){
-      
+
       p = i*nx+j;
-      
+
       if (get_off(QAI, p) || ill_[p] < 0) continue;
 
         num = mx = 0.0;
@@ -993,7 +1016,7 @@ samp_t *samp = NULL;
 
     }
     }
-    
+
   }
 
   free((void*)cor_);
@@ -1003,14 +1026,13 @@ samp_t *samp = NULL;
   #ifdef FORCE_DEBUG
   print_brick_info(CF); set_brick_open(CF, OPEN_CREATE); write_brick(CF);
   #endif
-  
+
   #ifdef FORCE_CLOCK
   proctime_print("topographic correction factors", TIME);
   #endif
 
   return CF;
 }
-
 
 /** Average elevation of coarse grid cell
 +++ This function computes the average binned elevation in the given
