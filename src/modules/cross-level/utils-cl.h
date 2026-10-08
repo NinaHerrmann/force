@@ -60,7 +60,13 @@ void fproctime_append_int(int elapsed, char **runtime_log, size_t *log_size);
 void fproctime_append_str(const char *fimg, char **runtime_log, size_t *log_size);
 bool fequal(float a, float b);
 bool dequal(double a, double b);
+bool fequal0(float a, float *tol);
+bool dequal0(double a, double *tol);
+bool fdivisible(float a, float b);
+bool ddivisible(double a, double b);
 void print_humanreadable_bytes(off_t bytes);
+int weighted_average_of_seq(seq_t *values, seq_t *weights, float *average);
+int weighted_centroid_of_seq(seq_t *weights, float *average);
 
 #ifdef __cplusplus
 }

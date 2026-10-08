@@ -892,9 +892,9 @@ char domains[2][NPOW_10] = { "NIR", "SWIR1" };
   for (b=0; b<nb; b++){ free((void*)mask_b[b]); free((void*)mark_b[b]);}
 
 
-#ifdef FORCE_CLOCK
+  #ifdef FORCE_CLOCK
   proctime_print("shadow probability computation", TIME);
-#endif
+  #endif
 
   *SPR = spr_;
   return SUCCESS;
@@ -1766,7 +1766,7 @@ short  *temp_      = NULL;
 +++ etection in Landsat imagery. Remote Sensing of Environment, 118, 83-94
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 --- pl2:     L2 parameters
---- mission: mission ID
+--- meta:    metadata
 --- atc:     atmospheric correction factors
 --- TOA:     TOA reflectance
 --- DEM:     DEM
@@ -1774,7 +1774,7 @@ short  *temp_      = NULL;
 --- QAI:     Quality Assurance Information (modified)
 +++ Return:  SUCCESS/FAILURE
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-int detect_clouds(par_ll_t *pl2, int mission, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI, char **runtime_log, size_t *log_size){
+int detect_clouds(par_ll_t *pl2, meta_t *meta, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI, char **runtime_log, size_t *log_size){
 int npix, nclear, nland, ncloud, nc, p;
 float lowtemp = -1.0, hightemp = -1.0;
 float cc;
@@ -1793,8 +1793,8 @@ small *shd_   = NULL;
   #ifdef FORCE_CLOCK
   time_t TIME; time(&TIME);
   #endif
-  
-  
+
+
   cite_me(_CITE_CLOUD_);
 
 
@@ -1803,7 +1803,7 @@ small *shd_   = NULL;
   clock_gettime(CLOCK_MONOTONIC, &start);
 
   /** Potential Cloud Pixels **/
-  if (potential_cloud(pl2, &npix, &nclear, &nland, 
+  if (potential_cloud(pl2, &npix, &nclear, &nland,
         TOA, QAI, EXP, &pcp_, &clr_, &lnd_, &brt_, &var_) == FAILURE){
     printf("error in PCP module.\n"); return FAILURE;}
   clock_gettime(CLOCK_MONOTONIC, &end);
@@ -1816,11 +1816,11 @@ small *shd_   = NULL;
     /** Cloud Probability **/
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    if (mission == LANDSAT){
+    if (meta->mission == LANDSAT){
       if (cloud_probability(pl2->nthread, npix, nclear, nland, &ncloud, pl2->cldprob, &cc, &lowtemp, &hightemp,
           TOA, QAI, pcp_, clr_, lnd_, brt_, var_, &cld_) == FAILURE){
         printf("error in cloud probability module.\n"); return FAILURE;}
-    } else if (mission == SENTINEL2){
+    } else if (meta->mission == SENTINEL2){
       if (cloud_parallax(nclear, nland, npix, &ncloud, &cc, TOA, QAI, pcp_, clr_, lnd_, brt_, var_, &cld_) == FAILURE){
         printf("error in cloud parallax module.\n"); return FAILURE;}
     }
@@ -1902,7 +1902,7 @@ small *shd_   = NULL;
     elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
     fproctime_append(elapsed, runtime_log, log_size);
   }
-  
+
   free((void*)cld_); free((void*)shd_);
 
   #ifdef FORCE_DEBUG
@@ -1924,7 +1924,7 @@ small *shd_   = NULL;
   return SUCCESS;
 }
 
-int d_detect_clouds(par_ll_t *pl2, int mission, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI){
+int d_detect_clouds(par_ll_t *pl2, meta_t *meta, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI){
 int npix, nclear, nland, ncloud, nc, p;
 float lowtemp = -1.0, hightemp = -1.0;
 float cc;
@@ -1960,11 +1960,11 @@ small *shd_   = NULL;
 
     /** Cloud Probability **/
 
-    if (mission == LANDSAT){
+    if (meta->mission == LANDSAT){
       if (cloud_probability(pl2->nthread, npix, nclear, nland, &ncloud, pl2->cldprob, &cc, &lowtemp, &hightemp,
           TOA, QAI, pcp_, clr_, lnd_, brt_, var_, &cld_) == FAILURE){
         printf("error in cloud probability module.\n"); return FAILURE;}
-    } else if (mission == SENTINEL2){
+    } else if (meta->mission == SENTINEL2){
       if (cloud_parallax(nclear, nland, npix, &ncloud, &cc, TOA, QAI, pcp_, clr_, lnd_, brt_, var_, &cld_) == FAILURE){
         printf("error in cloud parallax module.\n"); return FAILURE;}
     }

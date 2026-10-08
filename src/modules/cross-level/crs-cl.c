@@ -21,38 +21,44 @@ along with FORCE.  If not, see <http://www.gnu.org/licenses/>.
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
 
 /**+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-Cloud and cloud shadow header
+This file contains functions for handling CRS
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
 
 
-#ifndef CLOUD_LL_H
-#define CLOUD_LL_H
+#include "crs-cl.h"
 
-#include <stdio.h>   // core input and output functions
-#include <stdlib.h>  // standard general utilities library
-#include <stdbool.h>  // boolean data type
-
-#include "../cross-level/const-cl.h"
-#include "../cross-level/quality-cl.h"
-#include "../cross-level/imagefuns-cl.h"
-#include "../cross-level/stats-cl.h"
-#include "../cross-level/cite-cl.h"
-#include "../cross-level/brick_base-cl.h"
-#include "../cross-level/brick_io-cl.h"
-#include "../lower-level/atc-ll.h"
-#include "../lower-level/param-ll.h"
+#include "gdal.h"           // public (C callable) GDAL entry points
+#include "cpl_conv.h"
+#include "ogr_srs_api.h"
 
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+int epsg_to_wkt(int epsg_code, char *wkt_output){
 
-int detect_clouds(par_ll_t *pl2, meta_t *meta, atc_t *atc, brick_t *TOA, brick_t *DEM, brick_t *EXP, brick_t *QAI, char **runtime_log, size_t *log_size);
-int cloud_distance(brick_t *QAI, int nodata, short *DIST);
 
-#ifdef __cplusplus
+  OGRSpatialReferenceH srs = OSRNewSpatialReference(NULL);
+
+  if (OSRImportFromEPSG(srs, epsg_code) == OGRERR_NONE){
+    
+    char *wkt = NULL;
+
+    // 3. Export to WKT string
+    OSRExportToWkt(srs, &wkt);
+
+    #ifdef FORCE_DEBUG
+    printf("EPSG conversion from EPSG:%d to WKT:\n", epsg_code);
+    printf("%s\n", wkt);
+    #endif
+    
+    copy_string(wkt_output, NPOW_10, wkt);
+
+    CPLFree(wkt);
+
+  } else {
+    OSRDestroySpatialReference(srs);
+    RETURN_ERROR("Could not convert EPSG:%d to WKT.", epsg_code);
+  }
+
+  OSRDestroySpatialReference(srs);
+
+  return SUCCESS;
 }
-#endif
-
-#endif
-
