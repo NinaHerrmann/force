@@ -1555,7 +1555,7 @@ short  *temp_      = NULL;
 
     #pragma omp for schedule(guided)
     for (id=0; id<nobj; id++){
-
+      best_base  = 0;  
       // assume object is round
       size = SIZE[id];
       radius = sqrt(size/M_PI);
