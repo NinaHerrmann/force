@@ -146,7 +146,7 @@ void write_par_ll_dem(FILE *fp, bool verbose){
     fprintf(fp, "# If FALSE, provide a single DEM file through FILE_DEM or disable DEM usage.\n");
     fprintf(fp, "# Type: Logical. Valid values: {TRUE,FALSE}\n");
   }
-  fprintf(fp, "# USE_DEM_DATABASE = FALSE\n");
+  fprintf(fp, "USE_DEM_DATABASE = FALSE\n");
   
   if (verbose){
     fprintf(fp, "# This is the resampling option for reprojection the DEM; you can choose\n");
@@ -420,6 +420,32 @@ void write_par_ll_aod(FILE *fp, bool verbose){
     fprintf(fp, "# Type: full directory path\n");
   }
   fprintf(fp, "DIR_AOD  = NULL\n");
+
+  return;
+}
+
+
+/** This function writes parameters into a parameter skeleton file: lower
++++ level topographic correction pars
+--- fp:      parameter skeleton file
+--- verbose: add description, or use more compact format for experts?
++++ Return:  void
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
+void write_par_ll_toc(FILE *fp, bool verbose){
+
+
+
+  fprintf(fp, "\n# TOPOGRAPHIC CORRECTION OPTIONS\n");
+  fprintf(fp, "# ------------------------------------------------------------------------\n");
+
+  if (verbose){
+    fprintf(fp, "# This parameter sets the minimum illumination angle for the topographic \n");
+    fprintf(fp, "# correction. Above this angle, the illumination angle is fixed to the \n");
+    fprintf(fp, "# specified value and the topographic correction is applied. This can reduce \n");
+    fprintf(fp, "# overcorrection effects.\n");
+    fprintf(fp, "# Type: Float. Valid range: [0,90]\n");
+  }
+  fprintf(fp, "ILLUMINATION_CUTOFF = 80.0\n");
 
   return;
 }

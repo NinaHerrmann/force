@@ -75,6 +75,7 @@ void register_lower(params_t *params, par_ll_t *pl2){
   register_bool_par(params,    "BUFFER_NODATA",         &pl2->bufnodata);
   register_bool_par(params,    "USE_DEM_DATABASE",      &pl2->use_dem_database);
   register_int_par(params,     "DEM_NODATA",            SHRT_MIN, SHRT_MAX, &pl2->dem_nodata);
+  register_float_par(params,   "ILLUMINATION_CUTOFF",   0, 90, &pl2->illumination_cutoff);
   register_enum_par(params,    "DEM_RESAMPLING",        _TAGGED_ENUM_RESAMPLE_, _RESAMPLE_LENGTH_, &pl2->dem_resample);
   register_int_par(params,     "COREG_BASE_NODATA",     SHRT_MIN, SHRT_MAX, &pl2->coreg_nodata);
   register_bool_par(params,    "ERASE_CLOUDS",          &pl2->erase_cloud);
@@ -165,29 +166,12 @@ void free_param_lower(par_ll_t *pl2){
 int parse_param_lower(par_ll_t *pl2){
 FILE *fpar = NULL;
 char  buffer[NPOW_16] = "\0";
-char  ext[NPOW_10] = "\0";
-char  bname[NPOW_10] = "\0";
 
 
   pl2->params = allocate_params();
   
-  // if .SAFE directory (S2) was given, use 1st granule
-  extension(pl2->d_level1, ext, NPOW_10);
-
-  if (strcmp(ext, ".SAFE") == 0){
-    
-    strncat(pl2->d_level1, "/GRANULE", NPOW_10-strlen(pl2->d_level1)-1);
-
-    if (findfile_pattern(pl2->d_level1, "L1C", NULL, bname, NPOW_10) != SUCCESS){
-        printf("Unable to dive down .SAFE file!\n"); return FAILURE;}
-
-    copy_string(pl2->d_level1, NPOW_10, bname);
-
-  }
-
   basename_without_ext(pl2->d_level1, pl2->b_level1, NPOW_10);
   //printf("%s: ", pl2->b_level1);
-
 
 
   // open parameter file
