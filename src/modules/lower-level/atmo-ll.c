@@ -495,122 +495,71 @@ float **xyz_F = NULL;
   free((void*)xyz_rho_p); free((void*)xyz_T); free((void*)xyz_s);
   
 
-  /** row means **/
-  
-  #pragma omp parallel private(j, p, sum, num) shared(nx, ny, imean, ref, QAI) default(none) 
-  {
-
-    #pragma omp for schedule(static)
-    for (i=0; i<ny; i++){
-      sum = num = 0;
-      for (j=0, p=i*nx; j<nx; j++, p++){
-        if (get_off(QAI, p) || get_cloud(QAI, p) > 0) continue;
-        sum += ref[p]/10000.0;
-        num++;
-      }
-      if (num > 0) imean[i] = (float)(sum/num);
-    }
-
-  }
-
-  
+ // TODO test values
+#define CB 32
+int jb;
   /** column means **/
-
-  #pragma omp parallel private(i, p, sum, num) shared(nx, ny, jmean, ref, QAI) default(none) 
+#pragma omp parallel private(i, p) shared(nx, ny, jmean, ref, QAI) default(none)
   {
-
-    #pragma omp for schedule(static)
-    for (j=0; j<nx; j++){
-      sum = num = 0;
-      for (i=0, p=j; i<ny; i++, p+=nx){
-        if (get_off(QAI, p) || get_cloud(QAI, p) > 0) continue;
-        sum += ref[p]/10000.0;
-        num++;
-      }
-      if (num > 0) jmean[j] = (float)(sum/num);
-    }
-    
-  }
-
-  
-  /** exponential moving average, left to right, then right to left **/
-  
-  #pragma omp parallel private(k, j, p, old) shared(nx, ny, imean, ref, QAI, avg, alpha) default(none) 
-  {
-
-    #pragma omp for schedule(static)
+  double sumc[CB], numc[CB];
+  int w, c;
+#pragma omp for schedule(static)
+  for (jb=0; jb<nx; jb+=CB){
+    w = (jb+CB <= nx) ? CB : nx-jb;
+    for (c=0; c<w; c++) sumc[c] = numc[c] = 0;
     for (i=0; i<ny; i++){
-
-      for (k=0; k<3; k++) old[k] = imean[i];
-
-      for (j=0, p=i*nx; j<nx; j++, p++){
-        if (get_off(QAI, p)) continue;
-        for (k=0; k<3; k++){
-          if (get_cloud(QAI, p) > 0){
-            avg[k][p] = old[k];
-          } else {
-            avg[k][p] = alpha[k]*ref[p]/10000.0 + (1.0-alpha[k])*old[k];
-            old[k] = avg[k][p];
-          }
-        }
+      p = i*nx+jb;
+      for (c=0; c<w; c++, p++){
+        if (get_off(QAI, p) || get_cloud(QAI, p) > 0) continue;
+        sumc[c] += ref[p]/10000.0;
+        numc[c]++;
       }
-      p--;
-
-      for (j=nx-1; j>=0; j--, p--){
-        if (get_off(QAI, p)) continue;
-        for (k=0; k<3; k++){
-          if (get_cloud(QAI, p) > 0){
-            avg[k][p] = old[k];
-          } else {
-            avg[k][p] = alpha[k]*avg[k][p] + (1.0-alpha[k])*old[k];
-            old[k] = avg[k][p];
-          }
-        }
-      }
-
     }
-    
+    for (c=0; c<w; c++) if (numc[c] > 0) jmean[jb+c] = (float)(sumc[c]/numc[c]);
   }
-  
+  }
 
   /** exponential moving average, top to bottom, then bottom to top **/
-  
-  #pragma omp parallel private(k, i, p, old) shared(nx, ny, jmean, QAI, avg, alpha) default(none) 
-  {
+#pragma omp parallel private(k, i, p) shared(nx, ny, jmean, QAI, avg, alpha) default(none)
+{
+  float olc[3][CB];
+  int w, c;
+#pragma omp for schedule(static)
+  for (jb=0; jb<nx; jb+=CB){
+    w = (jb+CB <= nx) ? CB : nx-jb;
+    for (k=0; k<3; k++) for (c=0; c<w; c++) olc[k][c] = jmean[jb+c];
 
-    #pragma omp for schedule(static)
-    for (j=0; j<nx; j++){
-
-      for (k=0; k<3; k++) old[k] = jmean[j];
-
-      for (i=0, p=j; i<ny; i++, p+=nx){
+    for (i=0; i<ny; i++){
+      p = i*nx+jb;
+      for (c=0; c<w; c++, p++){
         if (get_off(QAI, p)) continue;
         for (k=0; k<3; k++){
           if (get_cloud(QAI, p) > 0){
-            avg[k][p] = old[k];
+            avg[k][p] = olc[k][c];
           } else {
-            avg[k][p] = alpha[k]*avg[k][p] + (1.0-alpha[k])*old[k];
-            old[k] = avg[k][p];
+            avg[k][p] = alpha[k]*avg[k][p] + (1.0-alpha[k])*olc[k][c];
+            olc[k][c] = avg[k][p];
           }
         }
       }
-      p-=nx;
-
-      for (i=ny-1; i>=0; i--, p-=nx){
-        if (get_off(QAI, p)) continue;
-        for (k=0; k<3; k++){
-          if (get_cloud(QAI, p) > 0){
-            avg[k][p] = old[k];
-          } else {
-            avg[k][p] = alpha[k]*avg[k][p] + (1.0-alpha[k])*old[k];
-            old[k] = avg[k][p];
-          }
-        }
-      }
-
     }
 
+    for (i=ny-1; i>=0; i--){
+      p = i*nx+jb;
+      for (c=0; c<w; c++, p++){
+        if (get_off(QAI, p)) continue;
+        for (k=0; k<3; k++){
+          if (get_cloud(QAI, p) > 0){
+            avg[k][p] = olc[k][c];
+          } else {
+            avg[k][p] = alpha[k]*avg[k][p] + (1.0-alpha[k])*olc[k][c];
+            olc[k][c] = avg[k][p];
+          }
+        }
+      }
+    }
   }
+}
 
   
   /** relative influence of rings **/
