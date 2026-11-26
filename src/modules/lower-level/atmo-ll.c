@@ -1051,7 +1051,7 @@ brick_t *BOA = TOA;
 
   // reproj the data
   if (pl2->doreproj){
-    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, BOA, cube) == FAILURE){
+    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, BOA, cube, pl2->nproc) == FAILURE){
       printf("warping BOA failed.\n"); return NULL;}
   }
 
@@ -1118,7 +1118,7 @@ short *qa_ = NULL;
   
   // reproj the data
   if (pl2->doreproj){
-    if (warp_from_brick_to_unknown_brick(pl2->dotile, 0, pl2->nthread, QA, cube) == FAILURE){
+    if (warp_from_brick_to_unknown_brick(pl2->dotile, 0, pl2->nthread, QA, cube, pl2->nproc) == FAILURE){
       printf("warping QAI failed.\n"); return NULL;}
   }
 
@@ -1453,7 +1453,7 @@ GDALDataType eOutputType = GDT_Float64;
 
   // reproj the data
   if (pl2->doreproj){
-    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, COARSE, cube) == FAILURE){
+    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, COARSE, cube, pl2->nproc) == FAILURE){
       printf("warping VZN failed.\n"); return NULL;}
   }
 
@@ -1623,7 +1623,7 @@ short *hot_ = NULL;
 
   // reproj the data
   if (pl2->doreproj){
-    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, HOT, cube) == FAILURE){
+    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, HOT, cube, pl2->nproc) == FAILURE){
       printf("warping HOT failed.\n"); return NULL;}
   }
 
@@ -1738,7 +1738,7 @@ float **xy_aod_ = NULL;
 
   // reproj the data
   if (pl2->doreproj){
-    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, AOD, cube) == FAILURE){
+    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, AOD, cube, pl2->nproc) == FAILURE){
       printf("warping AOD failed.\n"); return NULL;}
   }
 
@@ -1828,7 +1828,7 @@ short *wvp_ = NULL;
 
   // reproj the data
   if (pl2->doreproj){
-    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, WV, cube) == FAILURE){
+    if (warp_from_brick_to_unknown_brick(pl2->dotile, pl2->resample, pl2->nthread, WV, cube, pl2->nproc) == FAILURE){
       printf("warping WVP failed.\n"); return NULL;}
   }
   

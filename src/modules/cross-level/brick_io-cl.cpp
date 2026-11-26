@@ -618,6 +618,16 @@ const char *projection = NULL;
   return brick;
 }
   
+static size_t mem_limit_bytes(void){
+  size_t lim = (size_t)sysconf(_SC_PHYS_PAGES) * (size_t)sysconf(_SC_PAGESIZE);
+  FILE *f = fopen("/sys/fs/cgroup/memory.max", "r");   // cgroup v2; contains "max" if unlimited
+  if (f){
+    unsigned long long v;
+    if (fscanf(f, "%llu", &v) == 1 && v < lim) lim = (size_t)v;   // "max" fails the scan and is ignored
+    fclose(f);
+  }
+  return lim;
+}
 
   /** This function reprojects a brick into any other projection. The extent
   +++ of the warped image is unknown, thus it needs to be estimated first.
@@ -631,7 +641,7 @@ const char *projection = NULL;
   --- cube:    datacube definition (holds all projection parameters)
   +++ Return:  SUCCESS/FAILURE
   +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++**/
-  int warp_from_brick_to_unknown_brick(bool tile, int rsm, int threads, brick_t *src, cube_t *cube){
+  int warp_from_brick_to_unknown_brick(bool tile, int rsm, int threads, brick_t *src, cube_t *cube, int nproc){
   int i, j, p, k, b, b_, chunk_nb, nb;
   GDALDriverH driver;
   GDALDatasetH src_dataset;
@@ -738,6 +748,20 @@ const char *projection = NULL;
     dst_nx = dst_nx * dst_geotran[_GT_XRES_] / cube->resolution + 10;
     dst_ny = dst_ny * dst_geotran[_GT_YRES_] / cube->resolution * -1 + 10;
     dst_nc = dst_nx*dst_ny;
+  fprintf(stderr, "max memory %f \n", (double)mem_limit_bytes());
+  size_t budget = (size_t)(0.7 * (double)mem_limit_bytes()) / (size_t)(nproc > 0 ? nproc : 1);
+  size_t S      = (size_t)src_nc * (size_t)nb * sizeof(short);
+  size_t per_b  = ((size_t)src_nc + 2*(size_t)dst_nc) * sizeof(short);
+
+  if (budget > 2*S){
+    size_t cb = (budget - 2*S) / per_b;
+    if (cb > (size_t)nb) cb = (size_t)nb;
+    if (cb >= 1){
+      size_t m = (size_t)src_nc * cb * sizeof(short);
+      if (m > max_mem) max_mem = m;      // never below the old 0.75 GB default
+    }
+  }
+  fprintf(stderr, "chosen memory per proc %d \n", max_mem);
     dst_geotran[_GT_XRES_] = cube->resolution; 
     dst_geotran[_GT_YRES_] = cube->resolution * -1;
 
